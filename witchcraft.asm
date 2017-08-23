@@ -62,8 +62,6 @@ mask_nmi:
 nmi:
     rti
 
-    .const fldtabi = $02
-
     .pc = * "init"
 init:
     lda #$1b
@@ -73,10 +71,8 @@ init:
     sta $fffe
     lda #>frame
     sta $ffff
-    lda #$00
+    lda #$ff
     sta $d012
-    sta fldtabi
-    sta $3fff
 
     lda #$00
     tax
@@ -103,21 +99,8 @@ frame:
     sta $fffe
     lda #>music2x
     sta $ffff
-    lda #(312 / 2)
+    lda #99
     sta $d012
-
-    inc fldtabi
-    ldy fldtabi
-!:      ldx $d012
-            cpx $d012
-        beq * - 3
-        txa
-        cmp fldytab, y
-        beq !+
-            and #$07
-            ora #$18
-            sta $d011
-    jmp !-
 
 !:  pla
     tay
@@ -145,7 +128,7 @@ music2x:
     sta $fffe
     lda #>frame
     sta $ffff
-    lda #$00
+    lda #$ff
     sta $d012
 
     pla
@@ -155,12 +138,6 @@ music2x:
     pla
     asl $d019
     rti
-
-    .pc = * "fldytab"
-fldytab:
-    .for (var i = 0; i < 256; i++) {
-        .byte [-cos(i / 256 * 2 * 3.14159265) * 0.5 + 0.5] * 105 + 44
-    }
 
     .pc = $1000 "music"
 music:
