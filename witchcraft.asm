@@ -142,3 +142,7 @@ music2x:
     .pc = $1000 "music"
 music:
     .import c64 "music.prg"
+
+    .pc = $4000 "background bitmap"
+background_bitmap:
+    .import binary "build/background_bitmap.bin"

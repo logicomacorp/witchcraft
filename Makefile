@@ -2,7 +2,17 @@ PROJECT=witchcraft
 
 SRC=$(PROJECT).asm
 
+GRAPHICS_DIR=graphics
+
 BUILD_DIR=build
+
+GFXRIG_DIR=gfxrig
+GFXRIG_SRC=$(wildcard $(GFXRIG_DIR)/**/*.rs)
+GFXRIG=$(GFXRIG_DIR)/target/release/gfxrig
+
+BACKGROUND=$(GRAPHICS_DIR)/background.png
+
+BACKGROUND_BITMAP=$(BUILD_DIR)/background_bitmap.bin
 
 PRG=$(BUILD_DIR)/$(PROJECT).prg
 
@@ -22,7 +32,13 @@ dirs: $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(PRG): $(SRC)
+$(GFXRIG): $(GFXRIG_SRC)
+	cd $(GFXRIG_DIR) && cargo build --release
+
+$(BACKGROUND_BITMAP): $(BACKGROUND) $(GFXRIG)
+	$(GFXRIG) $(BACKGROUND) $(BACKGROUND_BITMAP)
+
+$(PRG): $(SRC) $(BACKGROUND_BITMAP)
 	kickass -showmem -odir $(BUILD_DIR) $(SRC)
 
 test: dirs $(PRG)
@@ -33,3 +49,4 @@ testsc: dirs $(PRG)
 
 clean:
 	$(RM) $(RM_FLAGS) $(BUILD_DIR)
+	cd $(GFXRIG_DIR) && cargo clean
