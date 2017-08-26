@@ -62,16 +62,27 @@ mask_nmi:
 nmi:
     rti
 
+    .const zp_base = $02
+
+    .const sprite_frame_index = zp_base
+    .const sprite_frame_counter = zp_base + 1
+
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
 
     .const sprite_pos = $7000
+    .const sprite_data_ptr_pos = background_screen_mem_pos + $3f8
 
     .pc = * "init"
 init:
     // Reset graphics mode/scroll
     lda #$1b
     sta $d011
+
+    // Reset vars
+    lda #$00
+    sta sprite_frame_index
+    sta sprite_frame_counter
 
     // Set initial color mem contents
     lda #$01
@@ -117,6 +128,8 @@ frame:
     tya
     pha
 
+    inc $d020
+
     // Set multicolor bitmap mode
     lda #$3b
     sta $d011
@@ -138,8 +151,66 @@ frame:
     //sta $d020
     sta $d021
 
+    // Set sprite positions
+    //  Note these initial positions were taken straight from the spec image, so they'll need some transformation for actual reg values
+    .const sprite_positions_x = List().add(  1,   8,  11,  76, 135, 143, 133, 138).lock()
+    .const sprite_positions_y = List().add( 63,  43, 101,  76,  20,  47,  71, 110).lock()
+    .var sprite_pos_x_msbs = 0
+    .for (var i = 0; i < 8; i++) {
+        .var x = sprite_positions_x.get(i) * 2 + $18
+        .var y = sprite_positions_y.get(i) + $32
+        .eval sprite_pos_x_msbs = (sprite_pos_x_msbs >> 1) | ((x >> 1) & $80)
+        lda #(x & $ff)
+        sta $d000 + i * 2
+        lda #y
+        sta $d001 + i * 2
+    }
+    lda #sprite_pos_x_msbs
+    sta $d010
+
+    // Set initial sprite colors
+    lda #$06
+    sta $d025
+    lda #$01
+    sta $d026
+    lda #$0e
+    .for (var i = 0; i < 8; i++) {
+        sta $d027 + i
+    }
+
+    // Enable sprites
+    lda #$ff
+    sta $d015
+
+    // Set sprite multicolor
+    lda #$ff
+    sta $d01c
+
+    // Update sprite ptrs
+    lda sprite_frame_index
+    and #$07
+    clc
+    adc #$c0
+
+    .for (var i = 0; i < 8; i++) {
+        sta sprite_data_ptr_pos + i
+        .if (i < 7) {
+            clc
+            adc #$08
+        }
+    }
+
+    inc sprite_frame_counter
+    lda sprite_frame_counter
+    cmp #$03
+    bne !+
+        inc sprite_frame_index
+
+        lda #$00
+        sta sprite_frame_counter
+
     // Update music
-    inc $d020
+!:  inc $d020
     jsr music + 3
     dec $d020
 
@@ -150,6 +221,8 @@ frame:
     sta $ffff
     lda #99
     sta $d012
+
+    dec $d020
 
     pla
     tay
