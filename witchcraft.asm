@@ -72,6 +72,8 @@ nmi:
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
 
+    .const scroller_font_pos = $6800
+
     .const sprite_pos = $7000
     .const sprite_data_ptr_pos = background_screen_mem_pos + $3f8
 
@@ -299,6 +301,10 @@ scroller_display:
     lda scroller_offset
     sta $d016
 
+    // Set charset/screen ptr
+    lda #$8a
+    sta $d018
+
     // Reset frame interrupt
     lda #<frame
     sta $fffe
@@ -322,6 +328,10 @@ music:
     .pc = background_bitmap_pos "background bitmap"
 background_bitmap:
     .import binary "build/background_bitmap.bin"
+
+    .pc = scroller_font_pos "scroller font"
+scroller_font:
+    .import binary "build/font.bin"
 
     .pc = sprite_pos "sprites"
 sprites:
