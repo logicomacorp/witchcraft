@@ -67,6 +67,8 @@ nmi:
     .const sprite_frame_index = zp_base
     .const sprite_frame_counter = zp_base + 1
 
+    .const scroller_offset = zp_base + 2
+
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
 
@@ -83,6 +85,7 @@ init:
     lda #$00
     sta sprite_frame_index
     sta sprite_frame_counter
+    sta scroller_offset
 
     // Set initial color mem contents
     lda #$01
@@ -209,8 +212,14 @@ frame:
         lda #$00
         sta sprite_frame_counter
 
+    // Update scroller
+!:  dec scroller_offset
+    lda scroller_offset
+    and #$07
+    sta scroller_offset
+
     // Update music
-!:  inc $d020
+    inc $d020
     jsr music + 3
     dec $d020
 
@@ -244,6 +253,51 @@ music2x:
     inc $d020
     jsr music + 6
     dec $d020
+
+    // Set scroller display interrupt
+    lda #<scroller_display
+    sta $fffe
+    lda #>scroller_display
+    sta $ffff
+    lda #205
+    sta $d012
+
+    pla
+    tay
+    pla
+    tax
+    pla
+    asl $d019
+    rti
+
+    .pc = * "scroller display"
+scroller_display:
+    pha
+    txa
+    pha
+    tya
+    pha
+
+    // Wait until line 210
+    lda #210
+!:      cmp $d012
+    bne !-
+
+    // Wait until the end of the line
+    ldx #$09
+!:      dex
+    bne !-
+    nop
+    nop
+
+    //inc $d020
+    //dec $d020
+
+    // Switch to hires char mode, 38 columns width
+    lda #$1b
+    sta $d011
+    lda scroller_offset
+    sta $d016
 
     // Reset frame interrupt
     lda #<frame
