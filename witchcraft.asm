@@ -62,11 +62,37 @@ mask_nmi:
 nmi:
     rti
 
+    .const background_bitmap_pos = $4000
+    .const background_screen_mem_pos = $6000
+    .const background_sprite_pos = $7000
+
     .pc = * "init"
 init:
+    // Reset graphics mode/scroll
     lda #$1b
     sta $d011
 
+    // Set initial color mem contents
+    lda #$01
+    ldx #$00
+!:      sta $d800, x
+        sta $d900, x
+        sta $da00, x
+        sta $db00, x
+    inx
+    bne !-
+
+    // Set initial screen mem contents
+    lda #$6e
+    ldx #$00
+!:      sta background_screen_mem_pos, x
+        sta background_screen_mem_pos + $100, x
+        sta background_screen_mem_pos + $200, x
+        sta background_screen_mem_pos + $300, x
+    inx
+    bne !-
+
+    // Set up frame interrupt
     lda #<frame
     sta $fffe
     lda #>frame
@@ -74,6 +100,7 @@ init:
     lda #$ff
     sta $d012
 
+    // Init music
     lda #$00
     tax
     tay
@@ -89,6 +116,27 @@ frame:
     tya
     pha
 
+    // Set multicolor bitmap mode
+    lda #$3b
+    sta $d011
+    lda #$18
+    sta $d016
+
+    // Set graphics/screen pointers
+    lda #$80
+    sta $d018
+
+    // Set graphics bank 1
+    lda $dd00
+    and #$fc
+    ora #$02
+    sta $dd00
+
+    // Set background colors
+    lda #$00
+    //sta $d020
+    sta $d021
+
     // Update music
     inc $d020
     jsr music + 3
@@ -102,7 +150,7 @@ frame:
     lda #99
     sta $d012
 
-!:  pla
+    pla
     tay
     pla
     tax
@@ -143,6 +191,6 @@ music2x:
 music:
     .import c64 "music.prg"
 
-    .pc = $4000 "background bitmap"
+    .pc = background_bitmap_pos "background bitmap"
 background_bitmap:
     .import binary "build/background_bitmap.bin"
