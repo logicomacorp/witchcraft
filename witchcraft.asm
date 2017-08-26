@@ -64,7 +64,8 @@ nmi:
 
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
-    .const background_sprite_pos = $7000
+
+    .const sprite_pos = $7000
 
     .pc = * "init"
 init:
@@ -194,3 +195,7 @@ music:
     .pc = background_bitmap_pos "background bitmap"
 background_bitmap:
     .import binary "build/background_bitmap.bin"
+
+    .pc = sprite_pos "sprites"
+sprites:
+    .import binary "build/sprites_blob.bin"
