@@ -109,6 +109,14 @@ init:
     inx
     bne !-
 
+    // Clear scroller screen mem (set to spaces, $20)
+    lda #$20
+    ldx #$00
+!:      sta background_screen_mem_pos + 20 * 40, x
+    inx
+    cpx #40
+    bne !-
+
     // Set up frame interrupt
     lda #<frame
     sta $fffe
@@ -220,6 +228,37 @@ frame:
     and #$07
     sta scroller_offset
 
+    cmp #$07
+    beq !+
+        jmp scroller_update_done
+        // Shift screen mem
+!:      .for (var i = 0; i < 39; i++) {
+            lda background_screen_mem_pos + 20 * 40 + i + 1
+            sta background_screen_mem_pos + 20 * 40 + i
+        }
+
+        // Load next char
+scroller_text_load_instr:
+        lda scroller_text
+        sta background_screen_mem_pos + 20 * 40 + 39
+
+        // Update (and possibly reset) text pointer
+        inc scroller_text_load_instr + 1
+        bne !+
+            inc scroller_text_load_instr + 2
+!:      lda scroller_text_load_instr + 1
+        cmp #<scroller_text_end
+        bne scroller_update_done
+        lda scroller_text_load_instr + 2
+        cmp #>scroller_text_end
+        bne scroller_update_done
+            lda #<scroller_text
+            sta scroller_text_load_instr + 1
+            lda #>scroller_text
+            sta scroller_text_load_instr + 2
+
+scroller_update_done:
+
     // Update music
     inc $d020
     jsr music + 3
@@ -280,13 +319,15 @@ scroller_display:
     tya
     pha
 
+    inc $d020
+
     // Wait until line 210
     lda #210
 !:      cmp $d012
     bne !-
 
     // Wait until the end of the line
-    ldx #$09
+    ldx #$08
 !:      dex
     bne !-
     nop
@@ -313,6 +354,8 @@ scroller_display:
     lda #$ff
     sta $d012
 
+    dec $d020
+
     pla
     tay
     pla
@@ -324,6 +367,13 @@ scroller_display:
     .pc = $1000 "music"
 music:
     .import c64 "music.prg"
+
+    .pc = * "scroller text"
+scroller_text:
+    .text "hi this is jake and alex and we frens our fur is sof pls protec"
+    // 40 chars of spaces at the end to make sure the screen goes blank before looping
+    .text "                                        "
+scroller_text_end:
 
     .pc = background_bitmap_pos "background bitmap"
 background_bitmap:
