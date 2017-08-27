@@ -74,7 +74,7 @@ nmi:
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
 
-    .const scroller_stretcher_lines = 24;
+    .const scroller_stretcher_lines = 24 - 2
     .const scroller_font_pos = $6800
     .const scroller_color_table = $8000
     .const scroller_d018_table = scroller_color_table + scroller_stretcher_lines
@@ -94,6 +94,91 @@ init:
     sta sprite_frame_index
     sta sprite_frame_counter
     sta scroller_offset
+
+    // Unpack scroller font
+    //  Bank out io regs
+    lda #$34
+    sta $01
+
+    ldx #$00
+unpack_font_char_loop:
+        txa
+        pha
+
+        ldx #$00
+unpack_font_line_loop:
+            // Read char line byte
+unpack_font_read_instr:
+            lda scroller_font_pos, x
+
+            // Write char line byte 8x
+            ldy #$00
+unpack_font_write_loop:
+unpack_font_write_instr:
+                sta $c000, y
+            iny
+            cpy #$08
+            bne unpack_font_write_loop
+
+            // Move write ptr to next charset
+            lda unpack_font_write_instr + 2
+            clc
+            adc #$08
+            sta unpack_font_write_instr + 2
+        inx
+        cpx #$08
+        bne unpack_font_line_loop
+
+        // Increment read ptr for next char
+        lda unpack_font_read_instr + 1
+        clc
+        adc #$08
+        sta unpack_font_read_instr + 1
+        bcc !+
+            inc unpack_font_read_instr + 2
+
+        // Subtract charset offsets from write ptr
+!:      lda unpack_font_write_instr + 2
+        sec
+        sbc #$40
+        sta unpack_font_write_instr + 2
+
+        // Increment write ptr for next char
+        lda unpack_font_write_instr + 1
+        clc
+        adc #$08
+        sta unpack_font_write_instr + 1
+        bcc !+
+            inc unpack_font_write_instr + 2
+
+!:      pla
+        tax
+    inx
+    cpx #$80
+    bne unpack_font_char_loop
+
+    //  Bank in io regs
+    lda #$35
+    sta $01
+
+    // Clear out original font data
+    //  This way we get a blank charset, useful for hiding some buggy stuff while doing the scroll rastersplits
+    ldx #$00
+clear_font_outer_loop:
+        lda #$00
+        tay
+clear_font_inner_loop:
+clear_font_write_instr:
+            // Clear char line byte
+            sta scroller_font_pos, y
+        iny
+        bne clear_font_inner_loop
+
+        // Increment write ptr for next char
+        inc clear_font_write_instr + 2
+    inx
+    cpx #$08
+    bne clear_font_outer_loop
 
     // Set initial color mem contents
     lda #$01
@@ -238,17 +323,8 @@ frame:
         sta sprite_frame_counter
 
     // Update scroller
-    //  Clear color+line tables
-!:  lda #$00
-    tax
-!:      sta scroller_color_table, x
-        sta scroller_d018_table, x
-    inx
-    cpx #(scroller_stretcher_lines - 1)
-    bne !-
-
-    // Simple y-scrolling scroller
-    lda frame_counter
+    //  Simple y-scrolling scroller
+!:  /*lda frame_counter
     asl
     asl
     clc
@@ -266,12 +342,7 @@ frame:
     lsr
     tay
     ldx #$00
-!:      txa
-        sec
-        sbc frame_counter
-        lsr
-        lsr
-        lsr
+!:      lda #$01
         sta scroller_color_table, y
         txa
         asl
@@ -279,6 +350,23 @@ frame:
         iny
     inx
     cpx #$08
+    bne !-*/
+
+    //  Repeating scroller
+    lda frame_counter
+    asl
+    tax
+    lda scroller_y_offset_tab_2, x
+    tay
+    ldx #$00
+!:      lda #$01
+        sta scroller_color_table, x
+        tya
+        sta scroller_d018_table, x
+        iny
+        iny
+    inx
+    cpx #scroller_stretcher_lines
     bne !-
 
     dec scroller_offset
@@ -358,7 +446,7 @@ music2x:
     sta $fffe
     lda #>scroller_display
     sta $ffff
-    lda #205
+    lda #206
     sta $d012
 
     pla
@@ -413,21 +501,15 @@ semi_stable_scroller_display:
     // Restore sp
     txs
 
-    // Wait until white line
-    ldx #$23
-!:      dex
-    bne !-
-    nop
-    nop
-
-    // Dark blue screen
-    lda #$06
-    sta $d021
+    // Clear last bank byte to remove graphical glitches
+    lda #$00
+    sta $ffff
 
     // Wait a bit
-    ldx #$16
+    ldx #$2d
 !:      dex
     bne !-
+    nop
     nop
 
     // Set charset/screen ptr
@@ -445,22 +527,26 @@ semi_stable_scroller_display:
     sta $dd00
 
     // Stretcher loop
-    //  Here we start at 1, since our screen mem loading badline overlapped the top scroller border
-    .for (var i = 1; i < scroller_stretcher_lines; i++) {
-        lda scroller_d018_table + (i - 1)
+    .for (var i = 0; i < scroller_stretcher_lines; i++) {
+        lda scroller_d018_table + i
         sta $d018
 
-        lda scroller_color_table + (i - 1)
+        lda scroller_color_table + i
         sta $d021
 
-        ldx #$06
-!:          dex
-        bne !-
+        lda #$00
+        sta scroller_d018_table + i
+        sta scroller_color_table + i
 
         .if (i < scroller_stretcher_lines - 1) {
+            ldx #$03
+!:              dex
+            bne !-
             nop
+            nop
+            bit $00
         
-            .if ((i & $07) == $07) {
+            .if (((i + 1) & $07) == $07) {
                 lda #$1a
             } else {
                 lda #$1b
@@ -474,14 +560,15 @@ semi_stable_scroller_display:
         }
     }
 
-    // Wait a tiny bit
+    // Wait a bit
+    ldx #$02
+!:      dex
+    bne !-
+    nop
+    nop
+    nop
+    nop
     bit $00
-
-    // Reset multicolor bitmap mode
-    lda #$3b
-    sta $d011
-    lda #$18
-    sta $d016
 
     // Reset VIC bank 1
     lda #$c6
@@ -490,6 +577,12 @@ semi_stable_scroller_display:
     // Reset graphics/screen pointers
     lda #$80
     sta $d018
+
+    // Reset multicolor bitmap mode
+    lda #$3b
+    sta $d011
+    lda #$18
+    sta $d016
 
     // Reset background color
     lda #$00
@@ -523,6 +616,10 @@ music:
 scroller_y_offset_tab:
     .for (var i = 0; i < 256; i++) {
         .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 15)
+    }
+scroller_y_offset_tab_2:
+    .for (var i = 0; i < 256; i++) {
+        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 128)
     }
 
     .pc = * "scroller text"
