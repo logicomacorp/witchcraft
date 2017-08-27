@@ -64,15 +64,20 @@ nmi:
 
     .const zp_base = $02
 
-    .const sprite_frame_index = zp_base
-    .const sprite_frame_counter = zp_base + 1
+    .const frame_counter = zp_base
 
-    .const scroller_offset = zp_base + 2
+    .const sprite_frame_index = zp_base + 1
+    .const sprite_frame_counter = zp_base + 2
+
+    .const scroller_offset = zp_base + 3
 
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
 
+    .const scroller_stretcher_lines = 24;
     .const scroller_font_pos = $6800
+    .const scroller_color_table = $8000
+    .const scroller_d018_table = scroller_color_table + scroller_stretcher_lines
 
     .const sprite_pos = $7000
     .const sprite_data_ptr_pos = background_screen_mem_pos + $3f8
@@ -85,6 +90,7 @@ init:
 
     // Reset vars
     lda #$00
+    sta frame_counter
     sta sprite_frame_index
     sta sprite_frame_counter
     sta scroller_offset
@@ -124,6 +130,41 @@ init:
     inx
     cpx #40
     bne !-
+
+    // Set sprite positions
+    //  Note these initial positions were taken straight from the spec image, so they'll need some transformation for actual reg values
+    .const sprite_positions_x = List().add(  1,   8,  11,  76, 135, 143, 133, 138).lock()
+    .const sprite_positions_y = List().add( 63,  43, 101,  76,  20,  47,  71, 110).lock()
+    .var sprite_pos_x_msbs = 0
+    .for (var i = 0; i < 8; i++) {
+        .var x = sprite_positions_x.get(i) * 2 + $18
+        .var y = sprite_positions_y.get(i) + $32
+        .eval sprite_pos_x_msbs = (sprite_pos_x_msbs >> 1) | ((x >> 1) & $80)
+        lda #(x & $ff)
+        sta $d000 + i * 2
+        lda #y
+        sta $d001 + i * 2
+    }
+    lda #sprite_pos_x_msbs
+    sta $d010
+
+    // Set initial sprite colors
+    lda #$06
+    sta $d025
+    lda #$01
+    sta $d026
+    lda #$0e
+    .for (var i = 0; i < 8; i++) {
+        sta $d027 + i
+    }
+
+    // Enable sprites
+    lda #$ff
+    sta $d015
+
+    // Set sprite multicolor
+    lda #$ff
+    sta $d01c
 
     // Set up frame interrupt
     lda #<frame
@@ -167,45 +208,11 @@ frame:
     sta $d018
 
     // Set graphics bank 1
-    lda $dd00
-    and #$fc
-    ora #$02
+    lda #$c6
     sta $dd00
 
-    // Set sprite positions
-    //  Note these initial positions were taken straight from the spec image, so they'll need some transformation for actual reg values
-    .const sprite_positions_x = List().add(  1,   8,  11,  76, 135, 143, 133, 138).lock()
-    .const sprite_positions_y = List().add( 63,  43, 101,  76,  20,  47,  71, 110).lock()
-    .var sprite_pos_x_msbs = 0
-    .for (var i = 0; i < 8; i++) {
-        .var x = sprite_positions_x.get(i) * 2 + $18
-        .var y = sprite_positions_y.get(i) + $32
-        .eval sprite_pos_x_msbs = (sprite_pos_x_msbs >> 1) | ((x >> 1) & $80)
-        lda #(x & $ff)
-        sta $d000 + i * 2
-        lda #y
-        sta $d001 + i * 2
-    }
-    lda #sprite_pos_x_msbs
-    sta $d010
-
-    // Set initial sprite colors
-    lda #$06
-    sta $d025
-    lda #$01
-    sta $d026
-    lda #$0e
-    .for (var i = 0; i < 8; i++) {
-        sta $d027 + i
-    }
-
-    // Enable sprites
-    lda #$ff
-    sta $d015
-
-    // Set sprite multicolor
-    lda #$ff
-    sta $d01c
+    // Increment frame counter
+    inc frame_counter
 
     // Update sprite ptrs
     lda sprite_frame_index
@@ -231,7 +238,50 @@ frame:
         sta sprite_frame_counter
 
     // Update scroller
-!:  dec scroller_offset
+    //  Clear color+line tables
+!:  lda #$00
+    tax
+!:      sta scroller_color_table, x
+        sta scroller_d018_table, x
+    inx
+    cpx #(scroller_stretcher_lines - 1)
+    bne !-
+
+    // Simple y-scrolling scroller
+    lda frame_counter
+    asl
+    asl
+    clc
+    adc frame_counter
+    tax
+    lda scroller_y_offset_tab, x
+    pha
+    lda frame_counter
+    asl
+    asl
+    tax
+    pla
+    clc
+    adc scroller_y_offset_tab, x
+    lsr
+    tay
+    ldx #$00
+!:      txa
+        sec
+        sbc frame_counter
+        lsr
+        lsr
+        lsr
+        sta scroller_color_table, y
+        txa
+        asl
+        sta scroller_d018_table, y
+        iny
+    inx
+    cpx #$08
+    bne !-
+
+    dec scroller_offset
     lda scroller_offset
     and #$07
     sta scroller_offset
@@ -364,42 +414,25 @@ semi_stable_scroller_display:
     txs
 
     // Wait until white line
-    ldx #$22
+    ldx #$23
 !:      dex
     bne !-
     nop
-
-    // White border
-    lda #$01
-    sta $d020
+    nop
 
     // Dark blue screen
     lda #$06
     sta $d021
 
-    // Wait until next line
-    ldx #$0a
-!:      dex
-    bne !-
-
-    // Light blue border
-    lda #$0e
-    sta $d020
-
     // Wait a bit
-    ldx #$09
+    ldx #$16
 !:      dex
     bne !-
     nop
-    bit $00
 
     // Set charset/screen ptr
     lda #$8a
     sta $d018
-
-    // Dark blue border
-    lda #$06
-    sta $d020
 
     // Switch to hires char mode, 38 columns width
     lda #$1b
@@ -407,28 +440,24 @@ semi_stable_scroller_display:
     lda scroller_offset
     sta $d016
 
-    // Reset background color
-    lda #$00
-    sta $d020
-    sta $d021
+    // Set VIC bank 0
+    lda #$c4
+    sta $dd00
 
     // Stretcher loop
     //  Here we start at 1, since our screen mem loading badline overlapped the top scroller border
-    .const stretcher_lines = 24;
-    .for (var i = 1; i < stretcher_lines; i++) {
-        .if (i < 9 || i >= 16) {
-            lda #$00
-        } else {
-            lda #$01
-        }
-        //lda #i
+    .for (var i = 1; i < scroller_stretcher_lines; i++) {
+        lda scroller_d018_table + (i - 1)
+        sta $d018
+
+        lda scroller_color_table + (i - 1)
         sta $d021
 
-        ldx #$07
+        ldx #$06
 !:          dex
         bne !-
 
-        .if (i < stretcher_lines - 1) {
+        .if (i < scroller_stretcher_lines - 1) {
             nop
         
             .if ((i & $07) == $07) {
@@ -438,9 +467,9 @@ semi_stable_scroller_display:
             }
             sta $d011 // This write should occur on cycle 55-57 each scanline, except the last one
 
-            ldx #$02
-!:              dex
-            bne !-
+            nop
+            nop
+            nop
             nop
         }
     }
@@ -454,40 +483,16 @@ semi_stable_scroller_display:
     lda #$18
     sta $d016
 
-    // White border
-    lda #$01
-    sta $d020
+    // Reset VIC bank 1
+    lda #$c6
+    sta $dd00
 
     // Reset graphics/screen pointers
     lda #$80
     sta $d018
 
-    // Wait a bit
-    nop
-    nop
-
-    // Light blue border
-    lda #$0e
-    sta $d020
-
-    // Wait a bit
-    ldx #$0b
-!:      dex
-    bne !-
-    nop
-
-    // Dark blue border
-    lda #$06
-    sta $d020
-
-    // Wait a bit
-    ldx #$0b
-!:      dex
-    bne !-
-
     // Reset background color
     lda #$00
-    sta $d020
     sta $d021
 
     //inc $d020
@@ -513,6 +518,12 @@ semi_stable_scroller_display:
     .pc = $1000 "music"
 music:
     .import c64 "music.prg"
+
+    .align $100
+scroller_y_offset_tab:
+    .for (var i = 0; i < 256; i++) {
+        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 15)
+    }
 
     .pc = * "scroller text"
 scroller_text:
