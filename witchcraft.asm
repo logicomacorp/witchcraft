@@ -109,6 +109,14 @@ init:
     inx
     bne !-
 
+    // Set scroller color mem contents
+    lda #$00
+    ldx #$00
+!:      sta $d800 + 20 * 40, x
+    inx
+    cpx #40
+    bne !-
+
     // Clear scroller screen mem (set to spaces, $20)
     lda #$20
     ldx #$00
@@ -141,6 +149,11 @@ frame:
     tya
     pha
 
+    // Set background colors
+    lda #$00
+    sta $d020
+    sta $d021
+
     inc $d020
 
     // Set multicolor bitmap mode
@@ -158,11 +171,6 @@ frame:
     and #$fc
     ora #$02
     sta $dd00
-
-    // Set background colors
-    lda #$00
-    //sta $d020
-    sta $d021
 
     // Set sprite positions
     //  Note these initial positions were taken straight from the spec image, so they'll need some transformation for actual reg values
@@ -311,6 +319,7 @@ music2x:
     asl $d019
     rti
 
+    .align $100
     .pc = * "scroller display"
 scroller_display:
     pha
@@ -319,22 +328,78 @@ scroller_display:
     tya
     pha
 
-    inc $d020
+    // Set up next interrupt stage
+    lda #<semi_stable_scroller_display
+    sta $fffe
+    inc $d012
 
-    // Wait until line 210
-    lda #210
-!:      cmp $d012
-    bne !-
+    // ACK so next stage can fire
+    asl $d019
 
-    // Wait until the end of the line
-    ldx #$08
+    // Save sp into x (we'll restore in the next stage)
+    tsx
+
+    // Clear interrupt flag so next stage can fire
+    cli
+
+    // nop pads (next stage should fire in here somewhere)
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    jmp * // Safety net (if we see more than 1-cycle jitter for the next int, we got here)
+
+    // Semi-stable int with 1 cycle jitter
+    .pc = * "semi-stable scroller display"
+semi_stable_scroller_display:
+    // Restore sp
+    txs
+
+    // Wait until white line
+    ldx #$22
 !:      dex
     bne !-
     nop
-    nop
 
-    //inc $d020
-    //dec $d020
+    // White border
+    lda #$01
+    sta $d020
+
+    // Dark blue screen
+    lda #$06
+    sta $d021
+
+    // Wait until next line
+    ldx #$0a
+!:      dex
+    bne !-
+
+    // Light blue border
+    lda #$0e
+    sta $d020
+
+    // Wait a bit
+    ldx #$09
+!:      dex
+    bne !-
+    nop
+    bit $00
+
+    // Set charset/screen ptr
+    lda #$8a
+    sta $d018
+
+    // Dark blue border
+    lda #$06
+    sta $d020
 
     // Switch to hires char mode, 38 columns width
     lda #$1b
@@ -342,9 +407,85 @@ scroller_display:
     lda scroller_offset
     sta $d016
 
-    // Set charset/screen ptr
-    lda #$8a
+    // Reset background color
+    lda #$00
+    sta $d020
+    sta $d021
+
+    // Stretcher loop
+    //  Here we start at 1, since our screen mem loading badline overlapped the top scroller border
+    .const stretcher_lines = 24;
+    .for (var i = 1; i < stretcher_lines; i++) {
+        lda #i
+        sta $d021
+
+        ldx #$07
+!:          dex
+        bne !-
+
+        .if (i < stretcher_lines - 1) {
+            nop
+        
+            .if ((i & $07) == $07) {
+                lda #$1a
+            } else {
+                lda #$1b
+            }
+            sta $d011 // This write should occur on cycle 55-57 each scanline, except the last one
+
+            ldx #$02
+!:              dex
+            bne !-
+            nop
+        }
+    }
+
+    // Wait a tiny bit
+    bit $00
+
+    // Reset multicolor bitmap mode
+    lda #$3b
+    sta $d011
+    lda #$18
+    sta $d016
+
+    // White border
+    lda #$01
+    sta $d020
+
+    // Reset graphics/screen pointers
+    lda #$80
     sta $d018
+
+    // Wait a bit
+    nop
+    nop
+
+    // Light blue border
+    lda #$0e
+    sta $d020
+
+    // Wait a bit
+    ldx #$0b
+!:      dex
+    bne !-
+    nop
+
+    // Dark blue border
+    lda #$06
+    sta $d020
+
+    // Wait a bit
+    ldx #$0b
+!:      dex
+    bne !-
+
+    // Reset background color
+    lda #$00
+    sta $d020
+    sta $d021
+
+    //inc $d020
 
     // Reset frame interrupt
     lda #<frame
@@ -354,7 +495,7 @@ scroller_display:
     lda #$ff
     sta $d012
 
-    dec $d020
+    //dec $d020
 
     pla
     tay
