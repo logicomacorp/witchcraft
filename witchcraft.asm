@@ -154,7 +154,7 @@ frame:
     sta $d020
     sta $d021
 
-    inc $d020
+    //inc $d020
 
     // Set multicolor bitmap mode
     lda #$3b
@@ -268,9 +268,9 @@ scroller_text_load_instr:
 scroller_update_done:
 
     // Update music
-    inc $d020
+    //inc $d020
     jsr music + 3
-    dec $d020
+    //dec $d020
 
     // Set 2x interrupt
     lda #<music2x
@@ -280,7 +280,7 @@ scroller_update_done:
     lda #99
     sta $d012
 
-    dec $d020
+    //dec $d020
 
     pla
     tay
@@ -299,9 +299,9 @@ music2x:
     pha
 
     // Update music 2x
-    inc $d020
+    //inc $d020
     jsr music + 6
-    dec $d020
+    //dec $d020
 
     // Set scroller display interrupt
     lda #<scroller_display
@@ -416,7 +416,12 @@ semi_stable_scroller_display:
     //  Here we start at 1, since our screen mem loading badline overlapped the top scroller border
     .const stretcher_lines = 24;
     .for (var i = 1; i < stretcher_lines; i++) {
-        lda #i
+        .if (i < 9 || i >= 16) {
+            lda #$00
+        } else {
+            lda #$01
+        }
+        //lda #i
         sta $d021
 
         ldx #$07
