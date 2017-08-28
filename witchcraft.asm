@@ -73,6 +73,7 @@ nmi:
 
     .const scroller_offset = zp_base + 4
     .const scroller_effect_index = zp_base + 5
+    .const scroller_temp = zp_base + 6
 
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
@@ -543,6 +544,7 @@ music:
 scroller_effect_jump_table:
     .word static_y_scroller - 1
     .word dynamic_y_scroller - 1
+    .word layered_scrollers - 1
     .word repeating_scroller - 1
 
     .pc = * "scroller update"
@@ -555,7 +557,7 @@ scroller_update:
     bne scroller_effect_index_update_done
         inc scroller_effect_index
         lda scroller_effect_index
-        cmp #$03
+        cmp #$04
         bne scroller_effect_index_update_done
             lda #$00
             sta scroller_effect_index
@@ -616,6 +618,112 @@ dynamic_y_scroller:
         cpx #$08
         bne !-
     jmp scroller_effect_done
+
+    // Layered scrollers
+layered_scrollers:
+        lda frame_counter_low
+        lsr
+        lsr
+        and #$07
+        tax
+        lda layered_scrollers_color_tab_1, x
+        sta scroller_temp
+        lda frame_counter_low
+        asl
+        asl
+        clc
+        adc frame_counter_low
+        tax
+        lda scroller_y_offset_tab, x
+        pha
+        lda frame_counter_low
+        asl
+        asl
+        tax
+        pla
+        clc
+        adc scroller_y_offset_tab, x
+        lsr
+        tay
+        ldx #$00
+!:          lda scroller_temp
+            sta scroller_color_table, y
+            txa
+            asl
+            sta scroller_d018_table, y
+            iny
+        inx
+        cpx #$07
+        bne !-
+
+        lda frame_counter_low
+        lsr
+        lsr
+        clc
+        adc #$02
+        and #$07
+        tax
+        lda layered_scrollers_color_tab_2, x
+        sta scroller_temp
+        lda frame_counter_low
+        asl
+        clc
+        adc frame_counter_low
+        tax
+        lda scroller_y_offset_tab, x
+        pha
+        lda frame_counter_low
+        tax
+        pla
+        clc
+        adc scroller_y_offset_tab, x
+        lsr
+        tay
+        ldx #$00
+!:          lda scroller_temp
+            sta scroller_color_table, y
+            txa
+            asl
+            sta scroller_d018_table, y
+            iny
+        inx
+        cpx #$07
+        bne !-
+
+        lda frame_counter_low
+        lsr
+        lsr
+        clc
+        adc #$04
+        and #$07
+        tax
+        lda layered_scrollers_color_tab_3, x
+        sta scroller_temp
+        lda frame_counter_low
+        asl
+        tax
+        lda scroller_y_offset_tab, x
+        tay
+        ldx #$00
+!:          lda scroller_temp
+            sta scroller_color_table, y
+            txa
+            asl
+            sta scroller_d018_table, y
+            iny
+        inx
+        cpx #$07
+        bne !-
+    jmp scroller_effect_done
+
+layered_scrollers_color_tab_1:
+    .byte $00, $02, $04, $03, $01, $03, $04, $02
+
+layered_scrollers_color_tab_2:
+    .byte $00, $0b, $0c, $0f, $01, $0f, $0c, $0b
+
+layered_scrollers_color_tab_3:
+    .byte $00, $06, $0e, $0d, $01, $0d, $0e, $06
 
     // Repeating scroller
 repeating_scroller:
