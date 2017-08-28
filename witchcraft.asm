@@ -666,6 +666,8 @@ layered_scrollers:
         lda layered_scrollers_color_tab_2, x
         sta scroller_temp
         lda frame_counter_low
+        clc
+        adc #$30
         asl
         clc
         adc frame_counter_low
@@ -700,6 +702,9 @@ layered_scrollers:
         lda layered_scrollers_color_tab_3, x
         sta scroller_temp
         lda frame_counter_low
+        clc
+        adc #$67
+        asl
         asl
         tax
         lda scroller_y_offset_tab, x
@@ -717,20 +722,30 @@ layered_scrollers:
     jmp scroller_effect_done
 
 layered_scrollers_color_tab_1:
-    .byte $00, $02, $04, $03, $01, $03, $04, $02
+    .byte $0b, $02, $04, $03, $01, $03, $04, $02
 
 layered_scrollers_color_tab_2:
-    .byte $00, $0b, $0c, $0f, $01, $0f, $0c, $0b
+    .byte $0b, $0c, $0f, $01, $01, $0f, $0c, $0b
 
 layered_scrollers_color_tab_3:
-    .byte $00, $06, $0e, $0d, $01, $0d, $0e, $06
+    .byte $0b, $06, $0e, $0d, $01, $0d, $0e, $06
 
     // Repeating scroller
 repeating_scroller:
         lda frame_counter_low
         asl
+        clc
+        adc frame_counter_low
         tax
         lda scroller_y_offset_tab_2, x
+        lsr
+        pha
+        lda frame_counter_low
+        asl
+        tax
+        pla
+        clc
+        adc scroller_y_offset_tab_2, x
         tay
         ldx #$00
 !:          tya
@@ -756,7 +771,7 @@ repeating_scroller:
     jmp scroller_effect_done
 
 repeating_scroller_color_tab:
-    .byte $00, $04, $03, $0d, $01, $07, $0a, $02
+    .byte $0b, $04, $03, $0d, $01, $07, $0a, $02
 
     // Scroller transition effect
 scroller_effect_done:
