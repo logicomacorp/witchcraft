@@ -860,9 +860,12 @@ scroller_y_offset_tab_2:
 
     .pc = * "scroller text"
 scroller_text:
-    .text "hi this is jake and alex and we frens our fur is sof pls protec"
+    .text "hi this is jake and alex and we frens our fur is sof pls protec "
+    .text "so this is just some placeholder text because i need way more test "
+    .text "text so that i can test that this shit actually looks good! yaaaay "
+    .text "it probably does so wheeee "
     // 40 chars of spaces at the end to make sure the screen goes blank before looping
-    .text "                                        "
+    //.text "                                        "
 scroller_text_end:
 
     .pc = background_bitmap_pos "background bitmap"
