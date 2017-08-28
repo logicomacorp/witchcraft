@@ -65,11 +65,14 @@ nmi:
     .const zp_base = $02
 
     .const frame_counter = zp_base
+    .const frame_counter_low = frame_counter
+    .const frame_counter_high = zp_base + 1
 
-    .const sprite_frame_index = zp_base + 1
-    .const sprite_frame_counter = zp_base + 2
+    .const sprite_frame_index = zp_base + 2
+    .const sprite_frame_counter = zp_base + 3
 
-    .const scroller_offset = zp_base + 3
+    .const scroller_offset = zp_base + 4
+    .const scroller_effect_index = zp_base + 5
 
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
@@ -90,10 +93,12 @@ init:
 
     // Reset vars
     lda #$00
-    sta frame_counter
+    sta frame_counter_low
+    sta frame_counter_high
     sta sprite_frame_index
     sta sprite_frame_counter
     sta scroller_offset
+    sta scroller_effect_index
 
     // Unpack scroller font
     //  Bank out io regs
@@ -297,10 +302,12 @@ frame:
     sta $dd00
 
     // Increment frame counter
-    inc frame_counter
+    inc frame_counter_low
+    bne !+
+        inc frame_counter_high
 
     // Update sprite ptrs
-    lda sprite_frame_index
+!:  lda sprite_frame_index
     and #$07
     clc
     adc #$c0
@@ -323,87 +330,7 @@ frame:
         sta sprite_frame_counter
 
     // Update scroller
-    //  Simple y-scrolling scroller
-!:  /*lda frame_counter
-    asl
-    asl
-    clc
-    adc frame_counter
-    tax
-    lda scroller_y_offset_tab, x
-    pha
-    lda frame_counter
-    asl
-    asl
-    tax
-    pla
-    clc
-    adc scroller_y_offset_tab, x
-    lsr
-    tay
-    ldx #$00
-!:      lda #$01
-        sta scroller_color_table, y
-        txa
-        asl
-        sta scroller_d018_table, y
-        iny
-    inx
-    cpx #$08
-    bne !-*/
-
-    //  Repeating scroller
-    lda frame_counter
-    asl
-    tax
-    lda scroller_y_offset_tab_2, x
-    tay
-    ldx #$00
-!:      lda #$01
-        sta scroller_color_table, x
-        tya
-        sta scroller_d018_table, x
-        iny
-        iny
-    inx
-    cpx #scroller_stretcher_lines
-    bne !-
-
-    dec scroller_offset
-    lda scroller_offset
-    and #$07
-    sta scroller_offset
-
-    cmp #$07
-    beq !+
-        jmp scroller_update_done
-        // Shift screen mem
-!:      .for (var i = 0; i < 39; i++) {
-            lda background_screen_mem_pos + 20 * 40 + i + 1
-            sta background_screen_mem_pos + 20 * 40 + i
-        }
-
-        // Load next char
-scroller_text_load_instr:
-        lda scroller_text
-        sta background_screen_mem_pos + 20 * 40 + 39
-
-        // Update (and possibly reset) text pointer
-        inc scroller_text_load_instr + 1
-        bne !+
-            inc scroller_text_load_instr + 2
-!:      lda scroller_text_load_instr + 1
-        cmp #<scroller_text_end
-        bne scroller_update_done
-        lda scroller_text_load_instr + 2
-        cmp #>scroller_text_end
-        bne scroller_update_done
-            lda #<scroller_text
-            sta scroller_text_load_instr + 1
-            lda #>scroller_text
-            sta scroller_text_load_instr + 2
-
-scroller_update_done:
+!:  jsr scroller_update
 
     // Update music
     //inc $d020
@@ -611,6 +538,207 @@ semi_stable_scroller_display:
     .pc = $1000 "music"
 music:
     .import c64 "music.prg"
+
+    .pc = * "scroller effect jump table"
+scroller_effect_jump_table:
+    .word static_y_scroller - 1
+    .word dynamic_y_scroller - 1
+    .word repeating_scroller - 1
+
+    .pc = * "scroller update"
+scroller_update:
+    // Update effect index
+    lda frame_counter_low
+    bne scroller_effect_index_update_done
+    lda frame_counter_high
+    and #$01
+    bne scroller_effect_index_update_done
+        inc scroller_effect_index
+        lda scroller_effect_index
+        cmp #$03
+        bne scroller_effect_index_update_done
+            lda #$00
+            sta scroller_effect_index
+scroller_effect_index_update_done:
+
+    // Dispatch effect
+    lda scroller_effect_index
+    asl
+    tax
+    lda scroller_effect_jump_table + 1, x
+    pha
+    lda scroller_effect_jump_table, x
+    pha
+    rts
+
+    // Static y scroller
+static_y_scroller:
+        ldy #(scroller_stretcher_lines / 2 - 8 / 2)
+        ldx #$00
+!:          lda #$01
+            sta scroller_color_table, y
+            txa
+            asl
+            sta scroller_d018_table, y
+            iny
+        inx
+        cpx #$08
+        bne !-
+    jmp scroller_effect_done
+
+    // Dynamic y scroller
+dynamic_y_scroller:
+        lda frame_counter_low
+        asl
+        asl
+        clc
+        adc frame_counter_low
+        tax
+        lda scroller_y_offset_tab, x
+        pha
+        lda frame_counter_low
+        asl
+        asl
+        tax
+        pla
+        clc
+        adc scroller_y_offset_tab, x
+        lsr
+        tay
+        ldx #$00
+!:          lda #$01
+            sta scroller_color_table, y
+            txa
+            asl
+            sta scroller_d018_table, y
+            iny
+        inx
+        cpx #$08
+        bne !-
+    jmp scroller_effect_done
+
+    // Repeating scroller
+repeating_scroller:
+        lda frame_counter_low
+        asl
+        tax
+        lda scroller_y_offset_tab_2, x
+        tay
+        ldx #$00
+!:          tya
+            pha
+            lsr
+            clc
+            adc frame_counter_low
+            lsr
+            lsr
+            lsr
+            and #$07
+            tay
+            lda repeating_scroller_color_tab, y
+            sta scroller_color_table, x
+            pla
+            tay
+            sta scroller_d018_table, x
+            iny
+            iny
+        inx
+        cpx #scroller_stretcher_lines
+        bne !-
+    jmp scroller_effect_done
+
+repeating_scroller_color_tab:
+    .byte $00, $04, $03, $0d, $01, $07, $0a, $02
+
+    // Scroller transition effect
+scroller_effect_done:
+    lda frame_counter_low
+    cmp #scroller_stretcher_lines
+    bcs scroller_transition_out_test
+    lda frame_counter_high
+    and #$01
+    bne scroller_transition_out_test
+        // Transition in
+        lda #scroller_stretcher_lines
+        sec
+        sbc frame_counter_low
+        jmp scroller_transition
+
+scroller_transition_out_test:
+    lda frame_counter_low
+    cmp #(256 - scroller_stretcher_lines)
+    bcc scroller_transition_done
+    lda frame_counter_high
+    and #$01
+    beq scroller_transition_done
+        // Transition out
+        lda frame_counter_low
+        sec
+        sbc #(256 - scroller_stretcher_lines)
+
+scroller_transition:
+    lsr
+    pha
+
+    // Top half
+    tax
+    inx
+    lda #$00
+    tay
+!:      sta scroller_color_table, y
+        iny
+    dex
+    bne !-
+
+    // Bottom half
+    pla
+
+    tax
+    inx
+    lda #$00
+    ldy #(scroller_stretcher_lines - 1)
+!:      sta scroller_color_table, y
+        dey
+    dex
+    bne !-
+
+scroller_transition_done:
+    dec scroller_offset
+    lda scroller_offset
+    and #$07
+    sta scroller_offset
+
+    cmp #$07
+    beq !+
+        jmp scroller_update_done
+        // Shift screen mem
+!:      .for (var i = 0; i < 39; i++) {
+            lda background_screen_mem_pos + 20 * 40 + i + 1
+            sta background_screen_mem_pos + 20 * 40 + i
+        }
+
+        // Load next char
+scroller_text_load_instr:
+        lda scroller_text
+        sta background_screen_mem_pos + 20 * 40 + 39
+
+        // Update (and possibly reset) text pointer
+        inc scroller_text_load_instr + 1
+        bne !+
+            inc scroller_text_load_instr + 2
+!:      lda scroller_text_load_instr + 1
+        cmp #<scroller_text_end
+        bne scroller_update_done
+        lda scroller_text_load_instr + 2
+        cmp #>scroller_text_end
+        bne scroller_update_done
+            lda #<scroller_text
+            sta scroller_text_load_instr + 1
+            lda #>scroller_text
+            sta scroller_text_load_instr + 2
+
+scroller_update_done:
+    rts
 
     .align $100
 scroller_y_offset_tab:
