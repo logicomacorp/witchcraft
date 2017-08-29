@@ -623,8 +623,7 @@ dynamic_y_scroller:
 layered_scrollers:
         lda frame_counter_low
         lsr
-        lsr
-        and #$07
+        and #$0f
         tax
         lda layered_scrollers_color_tab_1, x
         sta scroller_temp
@@ -658,10 +657,9 @@ layered_scrollers:
 
         lda frame_counter_low
         lsr
-        lsr
         clc
-        adc #$02
-        and #$07
+        adc #$04
+        and #$0f
         tax
         lda layered_scrollers_color_tab_2, x
         sta scroller_temp
@@ -694,10 +692,9 @@ layered_scrollers:
 
         lda frame_counter_low
         lsr
-        lsr
         clc
-        adc #$04
-        and #$07
+        adc #$08
+        and #$0f
         tax
         lda layered_scrollers_color_tab_3, x
         sta scroller_temp
@@ -722,13 +719,13 @@ layered_scrollers:
     jmp scroller_effect_done
 
 layered_scrollers_color_tab_1:
-    .byte $0b, $02, $04, $03, $01, $03, $04, $02
+    .byte $0b, $02, $04, $03, $01, $03, $04, $02, $02, $02, $02, $02, $02, $02, $02, $02
 
 layered_scrollers_color_tab_2:
-    .byte $0b, $0c, $0f, $01, $01, $0f, $0c, $0b
+    .byte $0b, $0c, $0f, $01, $01, $0f, $0c, $0b, $0b, $0b, $0b, $0b, $0b, $0b, $0b, $0b
 
 layered_scrollers_color_tab_3:
-    .byte $0b, $06, $0e, $0d, $01, $0d, $0e, $06
+    .byte $0b, $06, $0e, $0d, $01, $0d, $0e, $06, $06, $06, $06, $06, $06, $06, $06, $06
 
     // Repeating scroller
 repeating_scroller:
