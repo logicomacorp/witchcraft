@@ -101,6 +101,11 @@ init:
     sta scroller_offset
     sta scroller_effect_index
 
+    // Set background colors
+    lda #$00
+    sta $d020
+    sta $d021
+
     // Unpack scroller font
     //  Bank out io regs
     lda #$34
@@ -280,11 +285,6 @@ frame:
     pha
     tya
     pha
-
-    // Set background colors
-    lda #$00
-    sta $d020
-    sta $d021
 
     //inc $d020
 
