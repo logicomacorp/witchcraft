@@ -31,7 +31,7 @@ EMUFLAGS=
 RM=rm
 RM_FLAGS=-rf
 
-.PHONY: dirs
+.PHONY: all dirs test testsc clean
 
 all: dirs $(PRG)
 
