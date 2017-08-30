@@ -750,10 +750,7 @@ repeating_scroller:
             lsr
             clc
             adc frame_counter_low
-            lsr
-            lsr
-            lsr
-            and #$07
+            and #$3f
             tay
             lda repeating_scroller_color_tab, y
             sta scroller_color_table, x
@@ -768,7 +765,14 @@ repeating_scroller:
     jmp scroller_effect_done
 
 repeating_scroller_color_tab:
-    .byte $0b, $04, $03, $0d, $01, $07, $0a, $02
+    .byte $0b, $02, $0b, $0b, $0b, $0b, $04, $0b
+    .byte $04, $0b, $04, $04, $04, $04, $03, $04
+    .byte $03, $04, $03, $03, $03, $03, $0d, $03
+    .byte $0d, $03, $0d, $0d, $0d, $0d, $01, $0d
+    .byte $01, $0d, $01, $01, $01, $01, $07, $01
+    .byte $07, $01, $07, $07, $07, $07, $0a, $07
+    .byte $0a, $07, $0a, $0a, $0a, $0a, $02, $0a
+    .byte $02, $0a, $02, $02, $02, $02, $04, $02
 
     // Scroller transition effect
 scroller_effect_done:
