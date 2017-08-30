@@ -1,6 +1,10 @@
 extern crate image;
+extern crate minifb;
+extern crate time;
 
 use image::{GenericImage, Pixel};
+
+use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
 
 use std::env;
 use std::fs::File;
@@ -78,6 +82,86 @@ fn main() {
                     output.push(acc);
                 }
             }
+        }
+
+        // Fade stuff
+        let mut buffer: Box<[u32]> = vec![0; WIDTH * 2 * HEIGHT].into_boxed_slice();
+
+        let mut window = Window::new("Fade stuff", WIDTH * 2, HEIGHT, WindowOptions {
+            borderless: false,
+            title: true,
+            resize: false,
+            scale: Scale::X2
+        }).unwrap();
+
+        let fade_palettes = [
+            [0x00, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06],
+            [0x00, 0x06, 0x0b, 0x04, 0x0c, 0x0e, 0x0e, 0x0e],
+            [0x00, 0x06, 0x0b, 0x04, 0x0c, 0x03, 0x0d, 0x01],
+        ];
+
+        let mut start_time = time::precise_time_s();
+
+        while window.is_open() && !window.is_key_down(Key::Escape) {
+            if window.is_key_pressed(Key::Space, KeyRepeat::No) {
+                start_time = time::precise_time_s();
+            }
+
+            let time = time::precise_time_s() - start_time;
+
+            // Simulate 50fps by quantizing to 20ms intervals
+            let frame_index = (time / 0.020) as u32;
+
+            for char_y in 0..HEIGHT_CHARS {
+                for char_x in 0..WIDTH_CHARS {
+                    let fx = ((char_x as f64) / ((WIDTH_CHARS - 1) as f64) - 0.5) * 2.0 + 0.5;
+                    let fy = (char_y as f64) / ((HEIGHT_CHARS - 1) as f64);
+                    let t = (frame_index as f64) * 0.08;
+                    let dx = fx - 0.5;
+                    let dy = fy - 0.5;
+                    let d = (dx * dx + dy * dy).sqrt();
+                    let p = (fx * 9.0 + (fy * 5.88).sin()).sin() * (fy * 9.0 + (fx * 6.12).cos()).cos();
+
+                    let mut fade = -(d * 10.0) - (p * 0.5 + 0.5) * 6.0 + t;
+                    if fade < 0.0 {
+                        fade = 0.0;
+                    }
+                    if fade > 1.0 {
+                        fade = 1.0;
+                    }
+
+                    let mut color_index = (fade * 7.0) as i32;
+                    if color_index < 0 {
+                        color_index = 0;
+                    }
+                    if color_index > 7 {
+                        color_index = 7;
+                    }
+
+                    for y in 0..CHAR_HEIGHT {
+                        let char_byte = output[(char_y * WIDTH_CHARS + char_x) * 8 + y];
+
+                        for x in 0..CHAR_WIDTH {
+                            let pixel_x = char_x * CHAR_WIDTH + x;
+                            let pixel_y = char_y * CHAR_HEIGHT + y;
+
+                            let palette_index = (char_byte >> ((3 - x) * 2)) & 0x03;
+                            let color_index = if palette_index > 0 {
+                                fade_palettes[(palette_index - 1) as usize][color_index as usize]
+                            } else {
+                                0
+                            };
+                            let color = palette[color_index];
+
+                            let buffer_index = (pixel_y * WIDTH + pixel_x) * 2;
+                            buffer[buffer_index] = color;
+                            buffer[buffer_index + 1] = color;
+                        }
+                    }
+                }
+            }
+
+            window.update_with_buffer(&buffer);
         }
 
         let mut file = File::create(background_output_file_name).unwrap();

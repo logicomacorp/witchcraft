@@ -5,3 +5,5 @@ authors = ["ferris <yupferris@gmail.com>"]
 
 [dependencies]
 image = "*"
+minifb = "0.9.0"
+time = "0.1"
