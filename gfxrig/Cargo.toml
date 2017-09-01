@@ -7,3 +7,4 @@ authors = ["ferris <yupferris@gmail.com>"]
 image = "*"
 minifb = "0.9.0"
 time = "0.1"
+cons-list = "0.0.3"

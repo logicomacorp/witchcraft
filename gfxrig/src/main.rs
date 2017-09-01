@@ -1,14 +1,111 @@
 extern crate image;
 extern crate minifb;
 extern crate time;
+extern crate cons_list;
 
 use image::{GenericImage, Pixel};
 
-use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
+/*use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
+
+use cons_list::ConsList;*/
 
 use std::env;
 use std::fs::File;
 use std::io::Write;
+
+const WIDTH: usize = 160;
+const HEIGHT: usize = 200;
+
+const CHAR_WIDTH: usize = 4; // 4 due to multicolor
+const CHAR_HEIGHT: usize = 8;
+
+const WIDTH_CHARS: usize = WIDTH / CHAR_WIDTH;
+const HEIGHT_CHARS: usize = HEIGHT / CHAR_HEIGHT;
+
+/*struct FadeFrame {
+    screen_mem: Box<[u8]>,
+    color_mem: Box<[u8]>,
+}
+
+impl FadeFrame {
+    pub fn new() -> FadeFrame {
+        FadeFrame {
+            screen_mem: vec![0; WIDTH_CHARS * HEIGHT_CHARS].into_boxed_slice(),
+            color_mem: vec![0; WIDTH_CHARS * HEIGHT_CHARS].into_boxed_slice(),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum FadeInstruction {
+    WriteByte { addr: u16, value: u8 },
+    WriteRange { addr: u16, values: Box<[u8]> },
+    EndFrame,
+    EndAnim,
+}
+
+impl FadeInstruction {
+    pub fn size_bytes(&self) -> usize {
+        match self {
+            &FadeInstruction::WriteByte { .. } => 3,
+            &FadeInstruction::WriteRange { ref values, ..} => 3 + values.len(),
+            &FadeInstruction::EndFrame | &FadeInstruction::EndAnim => 1,
+        }
+    }
+
+    pub fn try_combine(&self, rhs: &FadeInstruction) -> Option<FadeInstruction> {
+        match self {
+            &FadeInstruction::WriteByte { addr: lhs_addr, value: lhs_value } => {
+                match rhs {
+                    &FadeInstruction::WriteByte { addr: rhs_addr, value: rhs_value } => {
+                        if lhs_addr + 1 == rhs_addr {
+                            Some(FadeInstruction::WriteRange { addr: lhs_addr, values: vec![lhs_value, rhs_value].into_boxed_slice() })
+                        } else {
+                            None
+                        }
+                    }
+                    &FadeInstruction::WriteRange { addr: rhs_addr, values: ref rhs_values } => {
+                        if lhs_addr + 1 == rhs_addr {
+                            let mut new_values = Vec::new();
+                            new_values.push(lhs_value);
+                            new_values.extend_from_slice(&rhs_values);
+                            Some(FadeInstruction::WriteRange { addr: lhs_addr, values: new_values.into_boxed_slice() })
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None
+                }
+            }
+            &FadeInstruction::WriteRange { addr: lhs_addr, values: ref lhs_values } => {
+                match rhs {
+                    &FadeInstruction::WriteByte { addr: rhs_addr, value: rhs_value } => {
+                        if lhs_addr + (lhs_values.len() as u16) == rhs_addr {
+                            let mut new_values = Vec::new();
+                            new_values.extend_from_slice(&lhs_values);
+                            new_values.push(rhs_value);
+                            Some(FadeInstruction::WriteRange { addr: lhs_addr, values: new_values.into_boxed_slice() })
+                        } else {
+                            None
+                        }
+                    }
+                    &FadeInstruction::WriteRange { addr: rhs_addr, values: ref rhs_values } => {
+                        if lhs_addr + (lhs_values.len() as u16) == rhs_addr {
+                            let mut new_values = Vec::new();
+                            new_values.extend_from_slice(&lhs_values);
+                            new_values.extend_from_slice(&rhs_values);
+                            Some(FadeInstruction::WriteRange { addr: lhs_addr, values: new_values.into_boxed_slice() })
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None
+                }
+            }
+            _ => None
+        }
+    }
+}*/
 
 fn main() {
     let background_input_file_name = env::args().skip(1).nth(0).unwrap();
@@ -19,15 +116,6 @@ fn main() {
 
     let sprites_input_file_name_prefix = env::args().skip(1).nth(4).unwrap();
     let sprites_output_file_name = env::args().skip(1).nth(5).unwrap();
-
-    const WIDTH: usize = 160;
-    const HEIGHT: usize = 200;
-
-    const CHAR_WIDTH: usize = 4; // 4 due to multicolor
-    const CHAR_HEIGHT: usize = 8;
-
-    const WIDTH_CHARS: usize = WIDTH / CHAR_WIDTH;
-    const HEIGHT_CHARS: usize = HEIGHT / CHAR_HEIGHT;
 
     const SPRITE_WIDTH: usize = 12; // 12 due to multicolor
     const SPRITE_HEIGHT: usize = 20;
@@ -85,14 +173,7 @@ fn main() {
         }
 
         // Fade stuff
-        let mut buffer: Box<[u32]> = vec![0; WIDTH * 2 * HEIGHT].into_boxed_slice();
-
-        let mut window = Window::new("Fade stuff", WIDTH * 2, HEIGHT, WindowOptions {
-            borderless: false,
-            title: true,
-            resize: false,
-            scale: Scale::X2
-        }).unwrap();
+        /*const NUM_FRAMES: usize = 256;
 
         let fade_palettes = [
             [0x00, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06],
@@ -100,17 +181,12 @@ fn main() {
             [0x00, 0x06, 0x0b, 0x04, 0x0c, 0x03, 0x0d, 0x01],
         ];
 
-        let mut start_time = time::precise_time_s();
+        println!("Calculating {} frames", NUM_FRAMES);
 
-        while window.is_open() && !window.is_key_down(Key::Escape) {
-            if window.is_key_pressed(Key::Space, KeyRepeat::No) {
-                start_time = time::precise_time_s();
-            }
+        let mut frames = Vec::new();
 
-            let time = time::precise_time_s() - start_time;
-
-            // Simulate 50fps by quantizing to 20ms intervals
-            let frame_index = (time / 0.020) as u32;
+        for frame_index in 0..NUM_FRAMES {
+            let mut frame = FadeFrame::new();
 
             for char_y in 0..HEIGHT_CHARS {
                 for char_x in 0..WIDTH_CHARS {
@@ -138,6 +214,149 @@ fn main() {
                         color_index = 7;
                     }
 
+                    let screen_mem_value = ((fade_palettes[0][color_index as usize] << 4) | fade_palettes[1][color_index as usize]) as u8;
+                    let color_mem_value = fade_palettes[2][color_index as usize] as u8;
+
+                    let mem_index = char_y * WIDTH_CHARS + char_x;
+                    frame.screen_mem[mem_index] = screen_mem_value;
+                    frame.color_mem[mem_index] = color_mem_value;
+                }
+            }
+
+            frames.push(frame);
+        }
+
+        println!("Raw size: {} bytes", NUM_FRAMES * WIDTH_CHARS * HEIGHT_CHARS * 2);
+
+        println!("Diffing and generating instructions");
+
+        let mut raw_instructions = Vec::new();
+        let mut max_raw_instructions_per_frame = 0;
+
+        const BACKGROUND_SCREEN_MEM_POS: u16 = 0x6000;
+        const COLOR_MEM_POS: u16 = 0xd800;
+
+        let initial_frame = FadeFrame::new();
+        let mut prev_frame = &initial_frame;
+        for frame in frames.iter() {
+            let mut num_instructions = 0;
+
+            // Diff screen mem
+            for mem_index in 0..WIDTH_CHARS * HEIGHT_CHARS {
+                if frame.screen_mem[mem_index] != prev_frame.screen_mem[mem_index] {
+                    raw_instructions.push(FadeInstruction::WriteByte { addr: BACKGROUND_SCREEN_MEM_POS + (mem_index as u16), value: frame.screen_mem[mem_index] });
+                    num_instructions += 1;
+                }
+            }
+
+            // Diff color mem
+            for mem_index in 0..WIDTH_CHARS * HEIGHT_CHARS {
+                if frame.color_mem[mem_index] != prev_frame.color_mem[mem_index] {
+                    raw_instructions.push(FadeInstruction::WriteByte { addr: COLOR_MEM_POS + (mem_index as u16), value: frame.color_mem[mem_index] });
+                    num_instructions += 1;
+                }
+            }
+
+            raw_instructions.push(FadeInstruction::EndFrame);
+            num_instructions += 1;
+
+            if num_instructions > max_raw_instructions_per_frame {
+                max_raw_instructions_per_frame = num_instructions;
+            }
+
+            prev_frame = frame;
+        }
+
+        raw_instructions.push(FadeInstruction::EndAnim);
+
+        println!("Total raw instructions: {}", raw_instructions.len());
+        println!("Max raw instructions/frame: {}", max_raw_instructions_per_frame);
+        println!("Total raw instruction bytes: {} bytes", raw_instructions.iter().fold(0, |acc, x| acc + x.size_bytes()));
+
+        println!("Optimizing instructions");
+
+        fn rev<T: Clone>(list: ConsList<T>) -> ConsList<T> {
+            let mut ret = ConsList::new();
+            for item in list.into_iter() {
+                // Hack to use clone here but gets the job done :)
+                ret = ret.append(item.clone());
+            }
+            ret
+        }
+
+        let mut instructions_list = ConsList::new();
+        for instruction in raw_instructions.into_iter() {
+            instructions_list = instructions_list.append(instruction);
+        }
+        instructions_list = rev(instructions_list);
+
+        let mut instructions = Vec::new();
+
+        let mut lhs = None;
+        let mut tail = instructions_list.tail();
+
+        loop {
+            if tail.is_empty() {
+                break;
+            }
+
+            if lhs.is_none() {
+                lhs = tail.head().cloned();
+                tail = tail.tail();
+                continue;
+            }
+
+            let rhs = tail.head().cloned().unwrap();
+            if let Some(instr) = lhs.clone().unwrap().try_combine(&rhs) {
+                lhs = Some(instr);
+                tail = tail.tail();
+            } else {
+                instructions.push(lhs.clone().unwrap());
+                lhs = None;
+            }
+        }
+
+        if let Some(instr) = lhs {
+            instructions.push(instr);
+        }
+
+        println!("Total optimized instructions: {}", instructions.len());
+        //println!("Max raw instructions/frame: {}", max_raw_instructions_per_frame); // TODO
+        println!("Total optimized instruction bytes: {} bytes", instructions.iter().fold(0, |acc, x| acc + x.size_bytes()));
+
+        // Fade preview
+        let mut buffer: Box<[u32]> = vec![0; WIDTH * 2 * HEIGHT].into_boxed_slice();
+
+        let mut window = Window::new("Fade stuff", WIDTH * 2, HEIGHT, WindowOptions {
+            borderless: false,
+            title: true,
+            resize: false,
+            scale: Scale::X2
+        }).unwrap();
+
+        let mut start_time = time::precise_time_s();
+
+        while window.is_open() && !window.is_key_down(Key::Escape) {
+            if window.is_key_pressed(Key::Space, KeyRepeat::No) {
+                start_time = time::precise_time_s();
+            }
+
+            let time = time::precise_time_s() - start_time;
+
+            // Simulate 50fps by quantizing to 20ms intervals
+            let mut frame_index = (time / 0.020) as usize;
+            if frame_index >= NUM_FRAMES {
+                frame_index = NUM_FRAMES - 1;
+            }
+
+            let frame = &frames[frame_index];
+
+            for char_y in 0..HEIGHT_CHARS {
+                for char_x in 0..WIDTH_CHARS {
+                    let mem_index = char_y * WIDTH_CHARS + char_x;
+                    let screen_mem_value = frame.screen_mem[mem_index];
+                    let color_mem_value = frame.color_mem[mem_index];
+
                     for y in 0..CHAR_HEIGHT {
                         let char_byte = output[(char_y * WIDTH_CHARS + char_x) * 8 + y];
 
@@ -146,12 +365,13 @@ fn main() {
                             let pixel_y = char_y * CHAR_HEIGHT + y;
 
                             let palette_index = (char_byte >> ((3 - x) * 2)) & 0x03;
-                            let color_index = if palette_index > 0 {
-                                fade_palettes[(palette_index - 1) as usize][color_index as usize]
-                            } else {
-                                0
+                            let color_index = match palette_index {
+                                0 => 0,
+                                1 => screen_mem_value >> 4,
+                                2 => screen_mem_value & 0x0f,
+                                _ => color_mem_value
                             };
-                            let color = palette[color_index];
+                            let color = palette[color_index as usize];
 
                             let buffer_index = (pixel_y * WIDTH + pixel_x) * 2;
                             buffer[buffer_index] = color;
@@ -162,7 +382,7 @@ fn main() {
             }
 
             window.update_with_buffer(&buffer);
-        }
+        }*/
 
         let mut file = File::create(background_output_file_name).unwrap();
         file.write(&output).unwrap();
