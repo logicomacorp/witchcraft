@@ -27,9 +27,13 @@ entry:
     lda #$35
     sta $01
 
-    // Copy 12kb block starting at the packed data to $8000-$bfff in 64 256-byte chunks
+    // Place @ character at end of screen (we'll use this as a progress indicator)
+    lda #$00
+    sta $0400 + 999
+
+    // Copy 12kb block starting at the packed data to $8000-$afff in 48 256-byte chunks
     ldy #$00
-    ldx #$40
+    ldx #$30
 reloc_block_loop:
 reloc_block_load_instr:
 !:          lda decomp_start, y
@@ -309,6 +313,8 @@ decomp_write_instr:
         inc decomp_write_instr + 1
         bne !+
             inc decomp_write_instr + 2
+            // Progress indicator
+            inc $d800 + 999
 !:      rts
 
 packed_demo_start:
@@ -316,8 +322,8 @@ packed_demo_start:
 packed_demo_end:
     }
 
-    .const target_size = $4000
-    .const max_size = $4000
+    .const target_size = $3000
+    .const max_size = $3000
 
     .var total_size = * - start_addr + 2 // + 2 to include the program load address
     .if(total_size > max_size) {
