@@ -1010,12 +1010,27 @@ bg_fade_color_mem_tab_4:
 scroller_text:
     // Delay scroll intro a bit by adding some spaces at the beginning
     .text "                "
-    .text "hi this is jake and alex and we frens our fur is sof pls protec "
-    .text "so this is just some placeholder text because i need way more test "
-    .text "text so that i can test that this shit actually looks good! yaaaay "
-    .text "it probably does so wheeee "
+    .text "Hello Datastorm, WHAT IS UP?? "
+    .text "Ferris on the keys here for this small demo by Pegboard Nerds and Logicoma. "
+    .text "Credits: "
+    .text "- Music: Flipside (Witchcraft/Pendulum cover) "
+    .text "- Graphics: Flipside "
+    .text "- Code: Ferris "
+    .text "-     "
+    .text "This thing started with Flipside doing a sick SID cover of this fab tune as well as a 'graphic cover' of the original album artwork! "
+    .text "He then approached me asking if we could make a 'cool oldschool thing with crazy color scroller' and seeing as I've been itching to do some more cool hw tricks (I'm still kinda "
+    .text "new to c64 after all) it was pretty easy to take the bait! "
+    .text "In quite short time we got the gfx converted and added some scroller/fade tech porn, and the timing just so happened to coincide nicely with Datastorm, so here we are! "
+    .text "This was pretty fun to put together, and I doubt this will be our last collab together.. :) "
+    .text "    "
+    .text "What you're looking at is a beauty of a 4-color multicolor pic with a sprite layer for the stars, as well as a FPP scroller display. Perhaps nothing particularly innovative, "
+    .text "but a nice homage to the oldschool style and really fun to make :) . "
+    .text "The track was composed with SID-Wizard and runs in double speed for extra PUNCH! "
+    .text "All of this is packed with my own custom packer called admiral p4kbar. "
+    .text "    "
+    .text "Well that's about it for this little prod. Thanks and greets to everyone at Datastorm for a lovely party; this won't be the last you hear from us! :) "
     // 40 chars of spaces at the end to make sure the screen goes blank before looping
-    //.text "                                        "
+    .text "                                        "
 scroller_text_end:
 
     .align $100
