@@ -106,6 +106,20 @@ init:
     sta $d020
     sta $d021
 
+    // Set initial color+screen mem contents
+    lda #$00
+    tax
+!:      sta $d800, x
+        sta $d900, x
+        sta $da00, x
+        sta $db00, x
+        sta background_screen_mem_pos, x
+        sta background_screen_mem_pos + $100, x
+        sta background_screen_mem_pos + $200, x
+        sta background_screen_mem_pos + $300, x
+    inx
+    bne !-
+
     // Unpack scroller font
     //  Bank out io regs
     lda #$34
@@ -190,26 +204,6 @@ clear_font_write_instr:
     inx
     cpx #$08
     bne clear_font_outer_loop
-
-    // Set initial color mem contents
-    lda #$01
-    ldx #$00
-!:      sta $d800, x
-        sta $d900, x
-        sta $da00, x
-        sta $db00, x
-    inx
-    bne !-
-
-    // Set initial screen mem contents
-    lda #$6e
-    ldx #$00
-!:      sta background_screen_mem_pos, x
-        sta background_screen_mem_pos + $100, x
-        sta background_screen_mem_pos + $200, x
-        sta background_screen_mem_pos + $300, x
-    inx
-    bne !-
 
     // Set scroller color mem contents
     lda #$00
@@ -332,6 +326,9 @@ frame:
 
     // Update scroller
 !:  jsr scroller_update
+
+    // Update bg fade
+    jsr bg_fade_update
 
     // Update music
     //inc $d020
@@ -864,15 +861,52 @@ scroller_text_load_instr:
 scroller_update_done:
     rts
 
-    .align $100
-scroller_y_offset_tab:
-    .for (var i = 0; i < 256; i++) {
-        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 15)
-    }
-scroller_y_offset_tab_2:
-    .for (var i = 0; i < 256; i++) {
-        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 128)
-    }
+    .pc = * "bg fade update"
+bg_fade_update:
+    //inc $d020
+
+    lda frame_counter_high
+    and #$01
+    beq !+
+        jmp bg_fade_update_done
+!:  lda frame_counter_low
+    lsr
+    sec
+    sbc #$07
+    tax
+    ldy #$00
+bg_fade_loop:
+        cpx #40
+        bcc !+
+            jmp bg_fade_loop_continue
+!:      lda bg_fade_screen_mem_tab, y
+        .for (var y = 0; y < 25; y++) {
+            .if (y < 20 || y >= 23) {
+                sta background_screen_mem_pos + y * 40, x
+            }
+        }
+        lda bg_fade_color_mem_tab, y
+        .for (var y = 0; y < 25; y++) {
+            .if (y < 20 || y >= 23) {
+                sta $d800 + y * 40, x
+            }
+        }
+bg_fade_loop_continue:
+        inx
+    iny
+    cpy #$07
+    beq bg_fade_update_done
+        jmp bg_fade_loop
+
+bg_fade_update_done:
+    //dec $d020
+
+    rts
+
+bg_fade_screen_mem_tab:
+    .byte $6e, $6e, $6c, $04, $0b, $06, $00
+bg_fade_color_mem_tab:
+    .byte $01, $0d, $03, $0c, $04, $0b, $06
 
     .pc = * "scroller text"
 scroller_text:
@@ -883,6 +917,17 @@ scroller_text:
     // 40 chars of spaces at the end to make sure the screen goes blank before looping
     //.text "                                        "
 scroller_text_end:
+
+    .align $100
+    .pc = * "scroller tables"
+scroller_y_offset_tab:
+    .for (var i = 0; i < 256; i++) {
+        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 15)
+    }
+scroller_y_offset_tab_2:
+    .for (var i = 0; i < 256; i++) {
+        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 128)
+    }
 
     .pc = background_bitmap_pos "background bitmap"
 background_bitmap:
