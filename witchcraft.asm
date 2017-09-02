@@ -871,7 +871,7 @@ bg_fade_update:
     lda frame_counter_low
     bne !+
     lda frame_counter_high
-    and #$01
+    and #$03
     bne !+
         inc bg_fade_fade_index
         lda bg_fade_fade_index
@@ -974,6 +974,8 @@ bg_fade_color_mem_tab_4:
 
     .pc = * "scroller text"
 scroller_text:
+    // Delay scroll intro a bit by adding some spaces at the beginning
+    .text "                "
     .text "hi this is jake and alex and we frens our fur is sof pls protec "
     .text "so this is just some placeholder text because i need way more test "
     .text "text so that i can test that this shit actually looks good! yaaaay "
