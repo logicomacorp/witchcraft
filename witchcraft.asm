@@ -863,7 +863,7 @@ scroller_update_done:
 
     .pc = * "bg fade update"
 bg_fade_update:
-    //inc $d020
+    inc $d020
 
     lda frame_counter_high
     and #$01
@@ -872,20 +872,20 @@ bg_fade_update:
 !:  lda frame_counter_low
     lsr
     sec
-    sbc #$07
+    sbc #$10
     tax
     ldy #$00
 bg_fade_loop:
         cpx #40
         bcc !+
             jmp bg_fade_loop_continue
-!:      lda bg_fade_screen_mem_tab, y
+!:      lda bg_fade_screen_mem_tab_5, y
         .for (var y = 0; y < 25; y++) {
             .if (y < 20 || y >= 23) {
                 sta background_screen_mem_pos + y * 40, x
             }
         }
-        lda bg_fade_color_mem_tab, y
+        lda bg_fade_color_mem_tab_5, y
         .for (var y = 0; y < 25; y++) {
             .if (y < 20 || y >= 23) {
                 sta $d800 + y * 40, x
@@ -894,19 +894,39 @@ bg_fade_loop:
 bg_fade_loop_continue:
         inx
     iny
-    cpy #$07
+    cpy #$10
     beq bg_fade_update_done
         jmp bg_fade_loop
 
 bg_fade_update_done:
-    //dec $d020
+    dec $d020
 
     rts
 
-bg_fade_screen_mem_tab:
-    .byte $6e, $6e, $6c, $04, $0b, $06, $00
-bg_fade_color_mem_tab:
-    .byte $01, $0d, $03, $0c, $04, $0b, $06
+bg_fade_screen_mem_tab_1:
+    .byte $6e, $6e, $6c, $04, $0b, $06, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
+bg_fade_color_mem_tab_1:
+    .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $00, $00, $00, $00, $00, $00, $00
+
+bg_fade_screen_mem_tab_2:
+    .byte $2a, $24, $92, $92, $99, $09, $00, $00, $00, $00, $06, $0b, $04, $6c, $6e, $6e
+bg_fade_color_mem_tab_2:
+    .byte $07, $0f, $0a, $08, $02, $09, $00, $00, $00, $06, $0b, $04, $0c, $03, $0d, $01
+
+bg_fade_screen_mem_tab_3:
+    .byte $5d, $cf, $4c, $48, $b2, $69, $00, $00, $00, $00, $09, $99, $92, $92, $24, $2a
+bg_fade_color_mem_tab_3:
+    .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $00, $09, $02, $08, $0a, $0f, $07
+
+bg_fade_screen_mem_tab_4:
+    .byte $bc, $b4, $bb, $6b, $66, $60, $00, $00, $00, $00, $69, $b2, $48, $4c, $cf, $5d
+bg_fade_color_mem_tab_4:
+    .byte $0f, $0c, $04, $04, $0b, $0b, $06, $00, $00, $06, $0b, $04, $0c, $03, $0d, $01
+
+bg_fade_screen_mem_tab_5:
+    .byte $6e, $6e, $6c, $04, $0b, $06, $00, $00, $00, $00, $60, $66, $6b, $bb, $b4, $bc
+bg_fade_color_mem_tab_5:
+    .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $06, $0b, $0b, $04, $04, $0c, $0f
 
     .pc = * "scroller text"
 scroller_text:
