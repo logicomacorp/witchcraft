@@ -235,11 +235,9 @@ clear_font_write_instr:
     sta $d010
 
     // Set initial sprite colors
-    lda #$06
+    lda #$00
     sta $d025
-    lda #$01
     sta $d026
-    lda #$0e
     .for (var i = 0; i < 8; i++) {
         sta $d027 + i
     }
@@ -552,7 +550,7 @@ scroller_update:
         lda scroller_effect_index
         cmp #$04
         bne scroller_effect_index_update_done
-            lda #$00
+            lda #$01
             sta scroller_effect_index
 scroller_effect_index_update_done:
 
@@ -878,6 +876,49 @@ bg_fade_update:
     beq !+
         jmp bg_fade_update_done
 
+    // Fade sprites
+!:  lda bg_fade_fade_index
+    asl
+    tax
+    lda bg_fade_screen_mem_index_tab, x
+    sta bg_fade_sprite_color_1_2_read_instr + 1
+    lda bg_fade_screen_mem_index_tab + 1, x
+    sta bg_fade_sprite_color_1_2_read_instr + 2
+    lda bg_fade_color_mem_index_tab, x
+    sta bg_fade_sprite_color_3_read_instr + 1
+    lda bg_fade_color_mem_index_tab + 1, x
+    sta bg_fade_sprite_color_3_read_instr + 2
+
+    lda frame_counter_low
+    lsr
+    lsr
+    sec
+    sbc #$08
+    cmp #$10
+    bcs !+
+        // Invert table index
+        eor #$ff
+        clc
+        adc #$10
+        tax
+bg_fade_sprite_color_1_2_read_instr:
+        lda bg_fade_screen_mem_tab_0, x
+        pha
+        lsr
+        lsr
+        lsr
+        lsr
+        sta $d025
+        pla
+        and #$0f
+        .for (var i = 0; i < 8; i++) {
+            sta $d027 + i
+        }
+bg_fade_sprite_color_3_read_instr:
+        lda bg_fade_color_mem_tab_0, x
+        sta $d026
+
+    // Fade BG
 !:  lda bg_fade_fade_index
     asl
     tax
