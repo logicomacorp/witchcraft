@@ -75,6 +75,8 @@ nmi:
     .const scroller_effect_index = zp_base + 5
     .const scroller_temp = zp_base + 6
 
+    .const bg_fade_fade_index = zp_base + 7
+
     .const background_bitmap_pos = $4000
     .const background_screen_mem_pos = $6000
 
@@ -100,6 +102,7 @@ init:
     sta sprite_frame_counter
     sta scroller_offset
     sta scroller_effect_index
+    sta bg_fade_fade_index
 
     // Set background colors
     lda #$00
@@ -863,13 +866,38 @@ scroller_update_done:
 
     .pc = * "bg fade update"
 bg_fade_update:
-    inc $d020
+    //inc $d020
 
+    lda frame_counter_low
+    bne !+
     lda frame_counter_high
     and #$01
+    bne !+
+        inc bg_fade_fade_index
+        lda bg_fade_fade_index
+        cmp #$05
+        bne !+
+            lda #$01
+            sta bg_fade_fade_index
+
+!:  lda frame_counter_high
+    and #$03
     beq !+
         jmp bg_fade_update_done
-!:  lda frame_counter_low
+
+!:  lda bg_fade_fade_index
+    asl
+    tax
+    lda bg_fade_screen_mem_index_tab, x
+    sta bg_fade_loop_screen_mem_read_instr + 1
+    lda bg_fade_screen_mem_index_tab + 1, x
+    sta bg_fade_loop_screen_mem_read_instr + 2
+    lda bg_fade_color_mem_index_tab, x
+    sta bg_fade_loop_color_mem_read_instr + 1
+    lda bg_fade_color_mem_index_tab + 1, x
+    sta bg_fade_loop_color_mem_read_instr + 2
+
+    lda frame_counter_low
     lsr
     sec
     sbc #$10
@@ -879,13 +907,15 @@ bg_fade_loop:
         cpx #40
         bcc !+
             jmp bg_fade_loop_continue
-!:      lda bg_fade_screen_mem_tab_5, y
+bg_fade_loop_screen_mem_read_instr:
+!:      lda bg_fade_screen_mem_tab_0, y
         .for (var y = 0; y < 25; y++) {
             .if (y < 20 || y >= 23) {
                 sta background_screen_mem_pos + y * 40, x
             }
         }
-        lda bg_fade_color_mem_tab_5, y
+bg_fade_loop_color_mem_read_instr:
+        lda bg_fade_color_mem_tab_0, y
         .for (var y = 0; y < 25; y++) {
             .if (y < 20 || y >= 23) {
                 sta $d800 + y * 40, x
@@ -899,33 +929,47 @@ bg_fade_loop_continue:
         jmp bg_fade_loop
 
 bg_fade_update_done:
-    dec $d020
+    //dec $d020
 
     rts
 
-bg_fade_screen_mem_tab_1:
+bg_fade_screen_mem_index_tab:
+    .word bg_fade_screen_mem_tab_0
+    .word bg_fade_screen_mem_tab_1
+    .word bg_fade_screen_mem_tab_2
+    .word bg_fade_screen_mem_tab_3
+    .word bg_fade_screen_mem_tab_4
+
+bg_fade_color_mem_index_tab:
+    .word bg_fade_color_mem_tab_0
+    .word bg_fade_color_mem_tab_1
+    .word bg_fade_color_mem_tab_2
+    .word bg_fade_color_mem_tab_3
+    .word bg_fade_color_mem_tab_4
+
+bg_fade_screen_mem_tab_0:
     .byte $6e, $6e, $6c, $04, $0b, $06, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
-bg_fade_color_mem_tab_1:
+bg_fade_color_mem_tab_0:
     .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $00, $00, $00, $00, $00, $00, $00
 
-bg_fade_screen_mem_tab_2:
+bg_fade_screen_mem_tab_1:
     .byte $2a, $24, $92, $92, $99, $09, $00, $00, $00, $00, $06, $0b, $04, $6c, $6e, $6e
-bg_fade_color_mem_tab_2:
+bg_fade_color_mem_tab_1:
     .byte $07, $0f, $0a, $08, $02, $09, $00, $00, $00, $06, $0b, $04, $0c, $03, $0d, $01
 
-bg_fade_screen_mem_tab_3:
+bg_fade_screen_mem_tab_2:
     .byte $5d, $cf, $4c, $48, $b2, $69, $00, $00, $00, $00, $09, $99, $92, $92, $24, $2a
-bg_fade_color_mem_tab_3:
+bg_fade_color_mem_tab_2:
     .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $00, $09, $02, $08, $0a, $0f, $07
 
-bg_fade_screen_mem_tab_4:
+bg_fade_screen_mem_tab_3:
     .byte $bc, $b4, $bb, $6b, $66, $60, $00, $00, $00, $00, $69, $b2, $48, $4c, $cf, $5d
-bg_fade_color_mem_tab_4:
+bg_fade_color_mem_tab_3:
     .byte $0f, $0c, $04, $04, $0b, $0b, $06, $00, $00, $06, $0b, $04, $0c, $03, $0d, $01
 
-bg_fade_screen_mem_tab_5:
+bg_fade_screen_mem_tab_4:
     .byte $6e, $6e, $6c, $04, $0b, $06, $00, $00, $00, $00, $60, $66, $6b, $bb, $b4, $bc
-bg_fade_color_mem_tab_5:
+bg_fade_color_mem_tab_4:
     .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $06, $0b, $0b, $04, $04, $0c, $0f
 
     .pc = * "scroller text"
