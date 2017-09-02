@@ -13,7 +13,7 @@ line_10:
 line_20:
     EndBasicProgram()
 
-    .const reloc_addr = $8000
+    .const reloc_addr = $9000
 
     .pc = * "stub entry"
 entry:
@@ -31,7 +31,7 @@ entry:
     lda #$00
     sta $0400 + 999
 
-    // Copy 12kb block starting at the packed data to $8000-$afff in 48 256-byte chunks
+    // Copy 12kb block starting at the packed data to $9000-$bfff in 48 256-byte chunks
     ldy #$00
     ldx #$30
 reloc_block_loop:

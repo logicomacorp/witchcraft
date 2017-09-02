@@ -75,7 +75,8 @@ nmi:
 
     .const scroller_stretcher_lines = 24 - 2
     .const scroller_font_pos = $6800
-    .const scroller_color_table = $8000
+    .const scroller_text_pos = $8000
+    .const scroller_color_table = $9000
     .const scroller_d018_table = scroller_color_table + scroller_stretcher_lines
 
     .const sprite_pos = $7000
@@ -535,7 +536,9 @@ music:
 scroller_effect_jump_table:
     .word static_y_scroller - 1
     .word dynamic_y_scroller - 1
+    .word mirrored_scroller - 1
     .word layered_scrollers - 1
+    .word squishy_scroller - 1
     .word repeating_scroller - 1
 
     .pc = * "scroller update"
@@ -548,7 +551,7 @@ scroller_update:
     bne scroller_effect_index_update_done
         inc scroller_effect_index
         lda scroller_effect_index
-        cmp #$04
+        cmp #$06
         bne scroller_effect_index_update_done
             lda #$01
             sta scroller_effect_index
@@ -607,6 +610,46 @@ dynamic_y_scroller:
             iny
         inx
         cpx #$08
+        bne !-
+    jmp scroller_effect_done
+
+    // Mirrored scroller
+mirrored_scroller:
+        // Top part
+        lda #(scroller_stretcher_lines / 2 - 7)
+        ldx frame_counter_low
+        sec
+        sbc mirrored_scroller_y_tab, x
+        tay
+        ldx #$00
+!:          lda #$01
+            sta scroller_color_table, y
+            txa
+            asl
+            sta scroller_d018_table, y
+            iny
+        inx
+        cpx #$07
+        bne !-
+
+        // Bottom part
+        lda #(scroller_stretcher_lines / 2)
+        ldx frame_counter_low
+        clc
+        adc mirrored_scroller_y_tab, x
+        tay
+        ldx #$00
+!:          lda #$0b
+            sta scroller_color_table, y
+            txa
+            eor #$ff
+            clc
+            adc #$07
+            asl
+            sta scroller_d018_table, y
+            iny
+        inx
+        cpx #$07
         bne !-
     jmp scroller_effect_done
 
@@ -674,6 +717,9 @@ layered_scrollers:
 !:          lda scroller_temp
             sta scroller_color_table, y
             txa
+            eor #$ff
+            clc
+            adc #$07
             asl
             sta scroller_d018_table, y
             iny
@@ -717,6 +763,51 @@ layered_scrollers_color_tab_2:
 
 layered_scrollers_color_tab_3:
     .byte $0b, $06, $0e, $0d, $01, $0d, $0e, $06, $06, $06, $06, $06, $06, $06, $06, $06
+
+    // Squishy scroller
+squishy_scroller:
+        lda frame_counter_low
+        asl
+        asl
+        asl
+        asl
+        sta scroller_temp
+        ldx #$00
+squishy_scroller_loop:
+            lda scroller_temp
+            and #$80
+            bne !+
+                lda scroller_temp
+                lsr
+                lsr
+                lsr
+                sta scroller_d018_table, x
+                sec
+                sbc frame_counter_low
+                lsr
+                and #$0f
+                tay
+                lda squishy_scroller_color_tab, y
+                sta scroller_color_table, x
+!:          ldy frame_counter_low
+            txa
+            eor #$ff
+            asl
+            clc
+            adc scroller_y_offset_tab_2, y
+            tay
+            lda scroller_temp
+            clc
+            adc squishy_scroller_y_tab, y
+            sta scroller_temp
+        inx
+        cpx #scroller_stretcher_lines
+        bne squishy_scroller_loop
+    jmp scroller_effect_done
+
+squishy_scroller_color_tab:
+    .byte $0b, $0f, $0c, $0f, $01, $01, $01, $01
+    .byte $01, $01, $01, $01, $0f, $0c, $0f, $0b
 
     // Repeating scroller
 repeating_scroller:
@@ -1006,7 +1097,40 @@ bg_fade_screen_mem_tab_4:
 bg_fade_color_mem_tab_4:
     .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $06, $0b, $0b, $04, $04, $0c, $0f
 
-    .pc = * "scroller text"
+    .align $100
+    .pc = * "scroller tables"
+scroller_y_offset_tab:
+    .for (var i = 0; i < 256; i++) {
+        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 15)
+    }
+scroller_y_offset_tab_2:
+    .for (var i = 0; i < 256; i++) {
+        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 128)
+    }
+
+mirrored_scroller_y_tab:
+    .for (var i = 0; i < 256; i++) {
+        .byte round(abs(sin(toRadians(i / 256 * 360 * 6))) * 4)
+    }
+
+squishy_scroller_y_tab:
+    .for (var i = 0; i < 256; i++) {
+        .byte round((sin(toRadians((i / 256 - 0.3) * 360 * 2)) * 0.5 + 0.5) * 26 - 12)
+    }
+
+    .pc = background_bitmap_pos "background bitmap"
+background_bitmap:
+    .import binary "build/background_bitmap.bin"
+
+    .pc = scroller_font_pos "scroller font"
+scroller_font:
+    .import binary "build/font.bin"
+
+    .pc = sprite_pos "sprites"
+sprites:
+    .import binary "build/sprites_blob.bin"
+
+    .pc = scroller_text_pos "scroller text"
 scroller_text:
     // Delay scroll intro a bit by adding some spaces at the beginning
     .text "                "
@@ -1032,26 +1156,3 @@ scroller_text:
     // 40 chars of spaces at the end to make sure the screen goes blank before looping
     .text "                                        "
 scroller_text_end:
-
-    .align $100
-    .pc = * "scroller tables"
-scroller_y_offset_tab:
-    .for (var i = 0; i < 256; i++) {
-        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 15)
-    }
-scroller_y_offset_tab_2:
-    .for (var i = 0; i < 256; i++) {
-        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 128)
-    }
-
-    .pc = background_bitmap_pos "background bitmap"
-background_bitmap:
-    .import binary "build/background_bitmap.bin"
-
-    .pc = scroller_font_pos "scroller font"
-scroller_font:
-    .import binary "build/font.bin"
-
-    .pc = sprite_pos "sprites"
-sprites:
-    .import binary "build/sprites_blob.bin"
