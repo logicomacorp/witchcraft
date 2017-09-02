@@ -1,1008 +1,329 @@
-    .pc = $0801 "autostart"
-    :BasicUpstart(entry)
+#import "common.inc"
+#import "basic.inc"
 
-    .pc = $080d "entry"
+	.const uncompressed_start_addr = demo_entry
+
+    .pc = start_addr "autostart"
+autostart:
+line_10:
+    // Call into entry subroutine
+    StartBasicLine(line_20, 10, basic_token_sys)
+    .text "2061"
+    EndBasicLine()
+line_20:
+    EndBasicProgram()
+
+    .const reloc_addr = $8000
+
+    .pc = * "stub entry"
 entry:
+    // Disable interrupts
+    //  Technically we should be enabling them again after the decompression routine,
+    //  but since we know we'll jump back into code that'll disable them anyways, it
+    //  should be fine.
     sei
 
     // Bank out BASIC and kernal ROMs
     lda #$35
     sta $01
 
-    jsr mask_nmi
-
-    // Turn off CIA interrupts
-    lda #$7f
-    sta $dc0d
-    sta $dd0d
-
-    // Enable raster interrupts
-    lda #$01
-    sta $d01a
-
-    jsr init
-
-    // Ack CIA interrupts
-    lda $dc0d
-    lda $dd0d
-
-    // Ack VIC interrupts
-    asl $d019
-
-    cli
-
-    jmp *
-
-    .pc = * "mask nmi"
-mask_nmi:
-    // Stop timer A
-    lda #$00
-    sta $dd0e
-
-    // Set timer A to 0 after starting
-    sta $dd04
-    sta $dd05
-
-    // Set timer A as NMI source
-    lda #$81
-    sta $dd0d
-
-    // Set NMI vector
-    lda #<nmi
-    sta $fffa
-    lda #>nmi
-    sta $fffb
-
-    // Start timer A (NMI triggers immediately)
-    lda #$01
-    sta $dd0e
-
-    rts
-
-nmi:
-    rti
-
-    .const zp_base = $02
-
-    .const frame_counter = zp_base
-    .const frame_counter_low = frame_counter
-    .const frame_counter_high = zp_base + 1
-
-    .const sprite_frame_index = zp_base + 2
-    .const sprite_frame_counter = zp_base + 3
-
-    .const scroller_offset = zp_base + 4
-    .const scroller_effect_index = zp_base + 5
-    .const scroller_temp = zp_base + 6
-
-    .const bg_fade_fade_index = zp_base + 7
-
-    .const background_bitmap_pos = $4000
-    .const background_screen_mem_pos = $6000
-
-    .const scroller_stretcher_lines = 24 - 2
-    .const scroller_font_pos = $6800
-    .const scroller_color_table = $8000
-    .const scroller_d018_table = scroller_color_table + scroller_stretcher_lines
-
-    .const sprite_pos = $7000
-    .const sprite_data_ptr_pos = background_screen_mem_pos + $3f8
-
-    .pc = * "init"
-init:
-    // Reset graphics mode/scroll
-    lda #$1b
-    sta $d011
-
-    // Reset vars
-    lda #$00
-    sta frame_counter_low
-    sta frame_counter_high
-    sta sprite_frame_index
-    sta sprite_frame_counter
-    sta scroller_offset
-    sta scroller_effect_index
-    sta bg_fade_fade_index
-
-    // Set background colors
-    lda #$00
-    sta $d020
-    sta $d021
-
-    // Set initial color+screen mem contents
-    lda #$00
-    tax
-!:      sta $d800, x
-        sta $d900, x
-        sta $da00, x
-        sta $db00, x
-        sta background_screen_mem_pos, x
-        sta background_screen_mem_pos + $100, x
-        sta background_screen_mem_pos + $200, x
-        sta background_screen_mem_pos + $300, x
-    inx
-    bne !-
-
-    // Unpack scroller font
-    //  Bank out io regs
-    lda #$34
-    sta $01
-
-    ldx #$00
-unpack_font_char_loop:
-        txa
-        pha
-
-        ldx #$00
-unpack_font_line_loop:
-            // Read char line byte
-unpack_font_read_instr:
-            lda scroller_font_pos, x
-
-            // Write char line byte 8x
-            ldy #$00
-unpack_font_write_loop:
-unpack_font_write_instr:
-                sta $c000, y
-            iny
-            cpy #$08
-            bne unpack_font_write_loop
-
-            // Move write ptr to next charset
-            lda unpack_font_write_instr + 2
-            clc
-            adc #$08
-            sta unpack_font_write_instr + 2
-        inx
-        cpx #$08
-        bne unpack_font_line_loop
-
-        // Increment read ptr for next char
-        lda unpack_font_read_instr + 1
-        clc
-        adc #$08
-        sta unpack_font_read_instr + 1
-        bcc !+
-            inc unpack_font_read_instr + 2
-
-        // Subtract charset offsets from write ptr
-!:      lda unpack_font_write_instr + 2
-        sec
-        sbc #$40
-        sta unpack_font_write_instr + 2
-
-        // Increment write ptr for next char
-        lda unpack_font_write_instr + 1
-        clc
-        adc #$08
-        sta unpack_font_write_instr + 1
-        bcc !+
-            inc unpack_font_write_instr + 2
-
-!:      pla
-        tax
-    inx
-    cpx #$80
-    bne unpack_font_char_loop
-
-    //  Bank in io regs
-    lda #$35
-    sta $01
-
-    // Clear out original font data
-    //  This way we get a blank charset, useful for hiding some buggy stuff while doing the scroll rastersplits
-    ldx #$00
-clear_font_outer_loop:
-        lda #$00
-        tay
-clear_font_inner_loop:
-clear_font_write_instr:
-            // Clear char line byte
-            sta scroller_font_pos, y
-        iny
-        bne clear_font_inner_loop
-
-        // Increment write ptr for next char
-        inc clear_font_write_instr + 2
-    inx
-    cpx #$08
-    bne clear_font_outer_loop
-
-    // Set scroller color mem contents
-    lda #$00
-    ldx #$00
-!:      sta $d800 + 20 * 40, x
-    inx
-    cpx #40
-    bne !-
-
-    // Clear scroller screen mem (set to spaces, $20)
-    lda #$20
-    ldx #$00
-!:      sta background_screen_mem_pos + 20 * 40, x
-    inx
-    cpx #40
-    bne !-
-
-    // Set sprite positions
-    //  Note these initial positions were taken straight from the spec image, so they'll need some transformation for actual reg values
-    .const sprite_positions_x = List().add(  1,   8,  11,  76, 135, 143, 133, 138).lock()
-    .const sprite_positions_y = List().add( 63,  43, 101,  76,  20,  47,  71, 110).lock()
-    .var sprite_pos_x_msbs = 0
-    .for (var i = 0; i < 8; i++) {
-        .var x = sprite_positions_x.get(i) * 2 + $18
-        .var y = sprite_positions_y.get(i) + $32
-        .eval sprite_pos_x_msbs = (sprite_pos_x_msbs >> 1) | ((x >> 1) & $80)
-        lda #(x & $ff)
-        sta $d000 + i * 2
-        lda #y
-        sta $d001 + i * 2
-    }
-    lda #sprite_pos_x_msbs
-    sta $d010
-
-    // Set initial sprite colors
-    lda #$06
-    sta $d025
-    lda #$01
-    sta $d026
-    lda #$0e
-    .for (var i = 0; i < 8; i++) {
-        sta $d027 + i
-    }
-
-    // Enable sprites
-    lda #$ff
-    sta $d015
-
-    // Set sprite multicolor
-    lda #$ff
-    sta $d01c
-
-    // Set up frame interrupt
-    lda #<frame
-    sta $fffe
-    lda #>frame
-    sta $ffff
-    lda #$ff
-    sta $d012
-
-    // Init music
-    lda #$00
-    tax
-    tay
-    jsr music
-
-    rts
-
-    .pc = * "frame"
-frame:
-    pha
-    txa
-    pha
-    tya
-    pha
-
-    //inc $d020
-
-    // Set multicolor bitmap mode
-    lda #$3b
-    sta $d011
-    lda #$18
-    sta $d016
-
-    // Set graphics/screen pointers
-    lda #$80
-    sta $d018
-
-    // Set graphics bank 1
-    lda #$c6
-    sta $dd00
-
-    // Increment frame counter
-    inc frame_counter_low
-    bne !+
-        inc frame_counter_high
-
-    // Update sprite ptrs
-!:  lda sprite_frame_index
-    and #$07
-    clc
-    adc #$c0
-
-    .for (var i = 0; i < 8; i++) {
-        sta sprite_data_ptr_pos + i
-        .if (i < 7) {
-            clc
-            adc #$08
-        }
-    }
-
-    inc sprite_frame_counter
-    lda sprite_frame_counter
-    cmp #$03
-    bne !+
-        inc sprite_frame_index
-
-        lda #$00
-        sta sprite_frame_counter
-
-    // Update scroller
-!:  jsr scroller_update
-
-    // Update bg fade
-    jsr bg_fade_update
-
-    // Update music
-    //inc $d020
-    jsr music + 3
-    //dec $d020
-
-    // Set 2x interrupt
-    lda #<music2x
-    sta $fffe
-    lda #>music2x
-    sta $ffff
-    lda #99
-    sta $d012
-
-    //dec $d020
-
-    pla
-    tay
-    pla
-    tax
-    pla
-    asl $d019
-    rti
-
-    .pc = * "music 2x"
-music2x:
-    pha
-    txa
-    pha
-    tya
-    pha
-
-    // Update music 2x
-    //inc $d020
-    jsr music + 6
-    //dec $d020
-
-    // Set scroller display interrupt
-    lda #<scroller_display
-    sta $fffe
-    lda #>scroller_display
-    sta $ffff
-    lda #206
-    sta $d012
-
-    pla
-    tay
-    pla
-    tax
-    pla
-    asl $d019
-    rti
-
-    .align $100
-    .pc = * "scroller display"
-scroller_display:
-    pha
-    txa
-    pha
-    tya
-    pha
-
-    // Set up next interrupt stage
-    lda #<semi_stable_scroller_display
-    sta $fffe
-    inc $d012
-
-    // ACK so next stage can fire
-    asl $d019
-
-    // Save sp into x (we'll restore in the next stage)
-    tsx
-
-    // Clear interrupt flag so next stage can fire
-    cli
-
-    // nop pads (next stage should fire in here somewhere)
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
-    jmp * // Safety net (if we see more than 1-cycle jitter for the next int, we got here)
-
-    // Semi-stable int with 1 cycle jitter
-    .pc = * "semi-stable scroller display"
-semi_stable_scroller_display:
-    // Restore sp
-    txs
-
-    // Clear last bank byte to remove graphical glitches
-    lda #$00
-    sta $ffff
-
-    // Wait a bit
-    ldx #$2d
-!:      dex
-    bne !-
-    nop
-    nop
-
-    // Set charset/screen ptr
-    lda #$8a
-    sta $d018
-
-    // Switch to hires char mode, 38 columns width
-    lda #$1b
-    sta $d011
-    lda scroller_offset
-    sta $d016
-
-    // Set VIC bank 0
-    lda #$c4
-    sta $dd00
-
-    // Stretcher loop
-    .for (var i = 0; i < scroller_stretcher_lines; i++) {
-        lda scroller_d018_table + i
-        sta $d018
-
-        lda scroller_color_table + i
-        sta $d021
-
-        lda #$00
-        sta scroller_d018_table + i
-        sta scroller_color_table + i
-
-        .if (i < scroller_stretcher_lines - 1) {
-            ldx #$03
-!:              dex
-            bne !-
-            nop
-            nop
-            bit $00
-        
-            .if (((i + 1) & $07) == $07) {
-                lda #$1a
-            } else {
-                lda #$1b
-            }
-            sta $d011 // This write should occur on cycle 55-57 each scanline, except the last one
-
-            nop
-            nop
-            nop
-            nop
-        }
-    }
-
-    // Wait a bit
-    ldx #$02
-!:      dex
-    bne !-
-    nop
-    nop
-    nop
-    nop
-    bit $00
-
-    // Reset VIC bank 1
-    lda #$c6
-    sta $dd00
-
-    // Reset graphics/screen pointers
-    lda #$80
-    sta $d018
-
-    // Reset multicolor bitmap mode
-    lda #$3b
-    sta $d011
-    lda #$18
-    sta $d016
-
-    // Reset background color
-    lda #$00
-    sta $d021
-
-    //inc $d020
-
-    // Reset frame interrupt
-    lda #<frame
-    sta $fffe
-    lda #>frame
-    sta $ffff
-    lda #$ff
-    sta $d012
-
-    //dec $d020
-
-    pla
-    tay
-    pla
-    tax
-    pla
-    asl $d019
-    rti
-
-    .pc = $1000 "music"
-music:
-    .import c64 "music.prg"
-
-    .pc = * "scroller effect jump table"
-scroller_effect_jump_table:
-    .word static_y_scroller - 1
-    .word dynamic_y_scroller - 1
-    .word layered_scrollers - 1
-    .word repeating_scroller - 1
-
-    .pc = * "scroller update"
-scroller_update:
-    // Update effect index
-    lda frame_counter_low
-    bne scroller_effect_index_update_done
-    lda frame_counter_high
-    and #$01
-    bne scroller_effect_index_update_done
-        inc scroller_effect_index
-        lda scroller_effect_index
-        cmp #$04
-        bne scroller_effect_index_update_done
-            lda #$00
-            sta scroller_effect_index
-scroller_effect_index_update_done:
-
-    // Dispatch effect
-    lda scroller_effect_index
-    asl
-    tax
-    lda scroller_effect_jump_table + 1, x
-    pha
-    lda scroller_effect_jump_table, x
-    pha
-    rts
-
-    // Static y scroller
-static_y_scroller:
-        ldy #(scroller_stretcher_lines / 2 - 8 / 2)
-        ldx #$00
-!:          lda #$01
-            sta scroller_color_table, y
-            txa
-            asl
-            sta scroller_d018_table, y
-            iny
-        inx
-        cpx #$08
-        bne !-
-    jmp scroller_effect_done
-
-    // Dynamic y scroller
-dynamic_y_scroller:
-        lda frame_counter_low
-        asl
-        asl
-        clc
-        adc frame_counter_low
-        tax
-        lda scroller_y_offset_tab, x
-        pha
-        lda frame_counter_low
-        asl
-        asl
-        tax
-        pla
-        clc
-        adc scroller_y_offset_tab, x
-        lsr
-        tay
-        ldx #$00
-!:          lda #$01
-            sta scroller_color_table, y
-            txa
-            asl
-            sta scroller_d018_table, y
-            iny
-        inx
-        cpx #$08
-        bne !-
-    jmp scroller_effect_done
-
-    // Layered scrollers
-layered_scrollers:
-        lda frame_counter_low
-        lsr
-        and #$0f
-        tax
-        lda layered_scrollers_color_tab_1, x
-        sta scroller_temp
-        lda frame_counter_low
-        asl
-        asl
-        clc
-        adc frame_counter_low
-        tax
-        lda scroller_y_offset_tab, x
-        pha
-        lda frame_counter_low
-        asl
-        asl
-        tax
-        pla
-        clc
-        adc scroller_y_offset_tab, x
-        lsr
-        tay
-        ldx #$00
-!:          lda scroller_temp
-            sta scroller_color_table, y
-            txa
-            asl
-            sta scroller_d018_table, y
-            iny
-        inx
-        cpx #$07
-        bne !-
-
-        lda frame_counter_low
-        lsr
-        clc
-        adc #$04
-        and #$0f
-        tax
-        lda layered_scrollers_color_tab_2, x
-        sta scroller_temp
-        lda frame_counter_low
-        clc
-        adc #$30
-        asl
-        clc
-        adc frame_counter_low
-        tax
-        lda scroller_y_offset_tab, x
-        pha
-        lda frame_counter_low
-        tax
-        pla
-        clc
-        adc scroller_y_offset_tab, x
-        lsr
-        tay
-        ldx #$00
-!:          lda scroller_temp
-            sta scroller_color_table, y
-            txa
-            asl
-            sta scroller_d018_table, y
-            iny
-        inx
-        cpx #$07
-        bne !-
-
-        lda frame_counter_low
-        lsr
-        clc
-        adc #$08
-        and #$0f
-        tax
-        lda layered_scrollers_color_tab_3, x
-        sta scroller_temp
-        lda frame_counter_low
-        clc
-        adc #$67
-        asl
-        asl
-        tax
-        lda scroller_y_offset_tab, x
-        tay
-        ldx #$00
-!:          lda scroller_temp
-            sta scroller_color_table, y
-            txa
-            asl
-            sta scroller_d018_table, y
-            iny
-        inx
-        cpx #$07
-        bne !-
-    jmp scroller_effect_done
-
-layered_scrollers_color_tab_1:
-    .byte $0b, $02, $04, $03, $01, $03, $04, $02, $02, $02, $02, $02, $02, $02, $02, $02
-
-layered_scrollers_color_tab_2:
-    .byte $0b, $0c, $0f, $01, $01, $0f, $0c, $0b, $0b, $0b, $0b, $0b, $0b, $0b, $0b, $0b
-
-layered_scrollers_color_tab_3:
-    .byte $0b, $06, $0e, $0d, $01, $0d, $0e, $06, $06, $06, $06, $06, $06, $06, $06, $06
-
-    // Repeating scroller
-repeating_scroller:
-        lda frame_counter_low
-        asl
-        clc
-        adc frame_counter_low
-        tax
-        lda scroller_y_offset_tab_2, x
-        lsr
-        pha
-        lda frame_counter_low
-        asl
-        tax
-        pla
-        clc
-        adc scroller_y_offset_tab_2, x
-        tay
-        ldx #$00
-!:          tya
-            pha
-            lsr
-            clc
-            adc frame_counter_low
-            and #$3f
-            tay
-            lda repeating_scroller_color_tab, y
-            sta scroller_color_table, x
-            pla
-            tay
-            sta scroller_d018_table, x
-            iny
-            iny
-        inx
-        cpx #scroller_stretcher_lines
-        bne !-
-    jmp scroller_effect_done
-
-repeating_scroller_color_tab:
-    .byte $0b, $02, $0b, $0b, $0b, $0b, $04, $0b
-    .byte $04, $0b, $04, $04, $04, $04, $03, $04
-    .byte $03, $04, $03, $03, $03, $03, $0d, $03
-    .byte $0d, $03, $0d, $0d, $0d, $0d, $01, $0d
-    .byte $01, $0d, $01, $01, $01, $01, $07, $01
-    .byte $07, $01, $07, $07, $07, $07, $0a, $07
-    .byte $0a, $07, $0a, $0a, $0a, $0a, $02, $0a
-    .byte $02, $0a, $02, $02, $02, $02, $04, $02
-
-    // Scroller transition effect
-scroller_effect_done:
-    lda frame_counter_low
-    cmp #scroller_stretcher_lines
-    bcs scroller_transition_out_test
-    lda frame_counter_high
-    and #$01
-    bne scroller_transition_out_test
-        // Transition in
-        lda #scroller_stretcher_lines
-        sec
-        sbc frame_counter_low
-        jmp scroller_transition
-
-scroller_transition_out_test:
-    lda frame_counter_low
-    cmp #(256 - scroller_stretcher_lines)
-    bcc scroller_transition_done
-    lda frame_counter_high
-    and #$01
-    beq scroller_transition_done
-        // Transition out
-        lda frame_counter_low
-        sec
-        sbc #(256 - scroller_stretcher_lines)
-
-scroller_transition:
-    lsr
-    pha
-
-    // Top half
-    tax
-    inx
-    lda #$00
-    tay
-!:      sta scroller_color_table, y
-        iny
-    dex
-    bne !-
-
-    // Bottom half
-    pla
-
-    tax
-    inx
-    lda #$00
-    ldy #(scroller_stretcher_lines - 1)
-!:      sta scroller_color_table, y
-        dey
-    dex
-    bne !-
-
-scroller_transition_done:
-    dec scroller_offset
-    lda scroller_offset
-    and #$07
-    sta scroller_offset
-
-    cmp #$07
-    beq !+
-        jmp scroller_update_done
-        // Shift screen mem
-!:      .for (var i = 0; i < 39; i++) {
-            lda background_screen_mem_pos + 20 * 40 + i + 1
-            sta background_screen_mem_pos + 20 * 40 + i
-        }
-
-        // Load next char
-scroller_text_load_instr:
-        lda scroller_text
-        sta background_screen_mem_pos + 20 * 40 + 39
-
-        // Update (and possibly reset) text pointer
-        inc scroller_text_load_instr + 1
-        bne !+
-            inc scroller_text_load_instr + 2
-!:      lda scroller_text_load_instr + 1
-        cmp #<scroller_text_end
-        bne scroller_update_done
-        lda scroller_text_load_instr + 2
-        cmp #>scroller_text_end
-        bne scroller_update_done
-            lda #<scroller_text
-            sta scroller_text_load_instr + 1
-            lda #>scroller_text
-            sta scroller_text_load_instr + 2
-
-scroller_update_done:
-    rts
-
-    .pc = * "bg fade update"
-bg_fade_update:
-    //inc $d020
-
-    lda frame_counter_low
-    bne !+
-    lda frame_counter_high
-    and #$03
-    bne !+
-        inc bg_fade_fade_index
-        lda bg_fade_fade_index
-        cmp #$05
-        bne !+
-            lda #$01
-            sta bg_fade_fade_index
-
-!:  lda frame_counter_high
-    and #$03
-    beq !+
-        jmp bg_fade_update_done
-
-!:  lda bg_fade_fade_index
-    asl
-    tax
-    lda bg_fade_screen_mem_index_tab, x
-    sta bg_fade_loop_screen_mem_read_instr + 1
-    lda bg_fade_screen_mem_index_tab + 1, x
-    sta bg_fade_loop_screen_mem_read_instr + 2
-    lda bg_fade_color_mem_index_tab, x
-    sta bg_fade_loop_color_mem_read_instr + 1
-    lda bg_fade_color_mem_index_tab + 1, x
-    sta bg_fade_loop_color_mem_read_instr + 2
-
-    lda frame_counter_low
-    lsr
-    sec
-    sbc #$10
-    tax
+    // Copy 12kb block starting at the packed data to $8000-$bfff in 64 256-byte chunks
     ldy #$00
-bg_fade_loop:
-        cpx #40
-        bcc !+
-            jmp bg_fade_loop_continue
-bg_fade_loop_screen_mem_read_instr:
-!:      lda bg_fade_screen_mem_tab_0, y
-        .for (var y = 0; y < 25; y++) {
-            .if (y < 20 || y >= 23) {
-                sta background_screen_mem_pos + y * 40, x
-            }
-        }
-bg_fade_loop_color_mem_read_instr:
-        lda bg_fade_color_mem_tab_0, y
-        .for (var y = 0; y < 25; y++) {
-            .if (y < 20 || y >= 23) {
-                sta $d800 + y * 40, x
-            }
-        }
-bg_fade_loop_continue:
-        inx
-    iny
-    cpy #$10
-    beq bg_fade_update_done
-        jmp bg_fade_loop
+    ldx #$40
+reloc_block_loop:
+reloc_block_load_instr:
+!:          lda decomp_start, y
+reloc_block_store_instr:
+            sta reloc_addr, y
+        iny
+        bne !-
 
-bg_fade_update_done:
-    //dec $d020
+        inc reloc_block_load_instr + 2
+        inc reloc_block_store_instr + 2
+    dex
+    bne reloc_block_loop
 
-    rts
+    jmp decomp_entry
 
-bg_fade_screen_mem_index_tab:
-    .word bg_fade_screen_mem_tab_0
-    .word bg_fade_screen_mem_tab_1
-    .word bg_fade_screen_mem_tab_2
-    .word bg_fade_screen_mem_tab_3
-    .word bg_fade_screen_mem_tab_4
+    .var uncompressed_data = LoadBinary("build/demo.bin");
+    .var uncompressed_demo_end = uncompressed_start_addr + uncompressed_data.getSize()
 
-bg_fade_color_mem_index_tab:
-    .word bg_fade_color_mem_tab_0
-    .word bg_fade_color_mem_tab_1
-    .word bg_fade_color_mem_tab_2
-    .word bg_fade_color_mem_tab_3
-    .word bg_fade_color_mem_tab_4
+    // Available zp addrs:
+    //  $02 (unused)
+    //  $92-97 (only used during either rs232 or datasette io)
+    //  $a3-$b1 (only used during either rs232 or datasette io)
+    //  $f7-$fa (only used during rs232 io)
+    //  $fb-$fe (unused)
+    //  $ff (only used during fp -> string conversion)
 
-bg_fade_screen_mem_tab_0:
-    .byte $6e, $6e, $6c, $04, $0b, $06, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
-bg_fade_color_mem_tab_0:
-    .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $00, $00, $00, $00, $00, $00, $00
+    .const table_base = $c000
 
-bg_fade_screen_mem_tab_1:
-    .byte $2a, $24, $92, $92, $99, $09, $00, $00, $00, $00, $06, $0b, $04, $6c, $6e, $6e
-bg_fade_color_mem_tab_1:
-    .byte $07, $0f, $0a, $08, $02, $09, $00, $00, $00, $06, $0b, $04, $0c, $03, $0d, $01
+    .const table_offset_low = table_base
+    .const table_offset_high = table_base + $30
+    .const table_additional_bits = table_base + $60
 
-bg_fade_screen_mem_tab_2:
-    .byte $5d, $cf, $4c, $48, $b2, $69, $00, $00, $00, $00, $09, $99, $92, $92, $24, $2a
-bg_fade_color_mem_tab_2:
-    .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $00, $09, $02, $08, $0a, $0f, $07
+    .const length_table_offset_low = table_offset_low
+    .const length_table_offset_high = table_offset_high
+    .const length_table_additional_bits = table_additional_bits
 
-bg_fade_screen_mem_tab_3:
-    .byte $bc, $b4, $bb, $6b, $66, $60, $00, $00, $00, $00, $69, $b2, $48, $4c, $cf, $5d
-bg_fade_color_mem_tab_3:
-    .byte $0f, $0c, $04, $04, $0b, $0b, $06, $00, $00, $06, $0b, $04, $0c, $03, $0d, $01
+    .const distance_table_offset_low = table_offset_low + $10
+    .const distance_table_offset_high = table_offset_high + $10
+    .const distance_table_additional_bits = table_additional_bits + $10
 
-bg_fade_screen_mem_tab_4:
-    .byte $6e, $6e, $6c, $04, $0b, $06, $00, $00, $00, $00, $60, $66, $6b, $bb, $b4, $bc
-bg_fade_color_mem_tab_4:
-    .byte $01, $0d, $03, $0c, $04, $0b, $06, $00, $00, $06, $0b, $0b, $04, $04, $0c, $0f
+    .const table_offset_low_temp = $92
+    .const table_offset_high_temp = $93
+    .const table_offset_add_low_temp = $94
+    .const table_offset_add_high_temp = $95
 
-    .pc = * "scroller text"
-scroller_text:
-    // Delay scroll intro a bit by adding some spaces at the beginning
-    .text "                "
-    .text "hi this is jake and alex and we frens our fur is sof pls protec "
-    .text "so this is just some placeholder text because i need way more test "
-    .text "text so that i can test that this shit actually looks good! yaaaay "
-    .text "it probably does so wheeee "
-    // 40 chars of spaces at the end to make sure the screen goes blank before looping
-    //.text "                                        "
-scroller_text_end:
+    .const bit_buffer = $fb
+    .const bit_index = $fc
 
-    .align $100
-    .pc = * "scroller tables"
-scroller_y_offset_tab:
-    .for (var i = 0; i < 256; i++) {
-        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 15)
+    .const backref_length_low = $92
+    .const backref_length_high = $93
+
+    // These addr's have to be consecutive
+    .const backref_ptr_low = $fd
+    .const backref_ptr_high = $fe
+
+    .const read_bit_temp = $02
+
+    .const read_n_bit_value_low = $a3
+    .const read_n_bit_value_high = $a4
+
+    .pc = * "decompressor and packed demo"
+decomp_start:
+    .pseudopc reloc_addr {
+decomp_entry:
+        // Expects y to be 0 on entry
+        sty bit_buffer
+        sty bit_index
+
+        // Decode table entries
+decomp_decode_table:
+            // Reset current offset add amount
+            ldx #$00
+            stx table_offset_add_high_temp
+            inx
+            stx table_offset_add_low_temp
+
+            // if (i & 0x0f) == 0 then reset current offset to 1
+            tya
+            and #$0f
+            bne !+
+                sta table_offset_high_temp
+                txa
+                sta table_offset_low_temp
+
+            // Read additional bit count
+!:          lda #$04
+            jsr decomp_read_n_bit_value
+
+            // Store additional bit count into table
+            sta table_additional_bits, y
+
+            // Shift current offset add amount (should be 1) by number of additional bits
+            tax
+            beq decomp_decode_table_store_and_add
+!:              asl table_offset_add_low_temp
+                rol table_offset_add_high_temp
+            dex
+            bne !-
+
+            // Store current offset into tables, and add shifted amount
+decomp_decode_table_store_and_add:
+            lda table_offset_low_temp
+            sta table_offset_low, y
+            clc
+            adc table_offset_add_low_temp
+            sta table_offset_low_temp
+            lda table_offset_high_temp
+            sta table_offset_high, y
+            adc table_offset_add_high_temp
+            sta table_offset_high_temp
+        iny
+        cpy #$30
+        bne decomp_decode_table
+
+        // Reset y, as the rest of the decompressor assumes its value is always 0
+        ldy #$00
+
+decomp_packet:
+            // Read packet bit
+            jsr decomp_read_bit
+
+            beq decomp_literal
+                // Backreference
+
+                // Read length
+                //  Read length index
+                jsr decomp_read_unary
+                //  Read additional bits
+                pha
+                lda length_table_additional_bits, x
+                jsr decomp_read_n_bit_value
+                //  Add offset to additional bits, and store in backref_length
+                pla
+                tax
+                lda length_table_offset_low, x
+                clc
+                adc read_n_bit_value_low
+                sta backref_length_low
+                lda length_table_offset_high, x
+                adc read_n_bit_value_high
+                sta backref_length_high
+
+                // Read distance
+                //  Read distance index
+                jsr decomp_read_unary
+                //  if length == 1 add 16 to distance index
+                cpy backref_length_high
+                bne !+
+                ldx backref_length_low
+                dex
+                bne !+
+                    clc
+                    adc #$10
+                //  Subtract table offset from current output pointer and store into backref_ptr
+!:              tax
+                lda decomp_write_instr + 1
+                sec
+                sbc distance_table_offset_low, x
+                sta backref_ptr_low
+                lda decomp_write_instr + 2
+                sbc distance_table_offset_high, x
+                sta backref_ptr_high
+
+                //  Read additional bits
+                lda distance_table_additional_bits, x
+                jsr decomp_read_n_bit_value
+                //  Subtract additional bits from backref_ptr
+                lda backref_ptr_low
+                sec
+                sbc read_n_bit_value_low
+                sta backref_ptr_low
+                lda backref_ptr_high
+                sbc read_n_bit_value_high
+                sta backref_ptr_high
+
+                // Copy backref_length bytes from backref_ptr to output
+                ldx backref_length_low
+decomp_copy_bytes:
+                    // Copy and output byte
+                    lda (backref_ptr_low), y
+                    jsr decomp_write_byte
+
+                    // Increment backref_ptr
+                    inc backref_ptr_low
+                    bne !+
+                        inc backref_ptr_high
+
+                // Decrement backref_length
+                //  Unfortunately, dex doesn't set carry, so we have to detect it ourselves manually
+!:              cpx #$00
+                bne !+
+                    dec backref_length_high
+!:              dex
+
+                // Check backref_length for 0. If we're not 0, copy some more bytes
+                bne decomp_copy_bytes
+                cpy backref_length_high
+                bne decomp_copy_bytes
+                beq decomp_next // Logically this should be jmp, but beq is equivalent here (due to cpy above) and 1 byte smaller
+
+decomp_literal:
+                // Literal
+                //  Read byte
+                tya
+                ldx #$08
+!:                  asl
+                    sta read_bit_temp
+                    jsr decomp_read_bit
+                    ora read_bit_temp
+                dex
+                bne !-
+
+                jsr decomp_write_byte
+
+decomp_next:
+        lda decomp_write_instr + 1
+        cmp #<uncompressed_demo_end
+        bne !+
+        lda decomp_write_instr + 2
+        cmp #>uncompressed_demo_end
+        bne !+
+        jmp demo_entry
+
+!:      jmp decomp_packet
+
+        // Ensures n and z flags are set along with returning the bit in a
+decomp_read_bit:
+        lda bit_index
+        and #$07
+        bne !+
+decomp_read_instr:
+            lda packed_demo_start
+            sta bit_buffer
+
+            inc decomp_read_instr + 1
+            bne !+
+                inc decomp_read_instr + 2
+!:      lda bit_buffer
+        lsr bit_buffer
+        inc bit_index
+        and #$01
+        rts
+
+        // Reads unary value into a and x
+decomp_read_unary:
+        ldx #$00
+!:          jsr decomp_read_bit
+        bne !+
+            inx
+        bne !- // Logically this should be jmp, but bne is equivalent here (due to inx before) and 1 byte smaller
+!:      txa
+        rts
+
+        // Expects number of bits to read in a
+        //  Reads into read_n_bit_value_low/high, and leaves read_n_bit_value_low in a
+        //  Does not _expect_ y to be zero since it's also called when decoding the table, but doesn't touch y either
+decomp_read_n_bit_value:
+        ldx #$00
+        stx read_n_bit_value_low
+        stx read_n_bit_value_high
+        tax
+        beq decomp_read_n_bit_value_done
+!:          asl read_n_bit_value_low
+            rol read_n_bit_value_high
+            jsr decomp_read_bit
+            ora read_n_bit_value_low
+            sta read_n_bit_value_low
+        dex
+        bne !-
+decomp_read_n_bit_value_done:
+        rts
+
+decomp_write_byte:
+decomp_write_instr:
+        sta uncompressed_start_addr
+
+        inc decomp_write_instr + 1
+        bne !+
+            inc decomp_write_instr + 2
+!:      rts
+
+packed_demo_start:
+        .import binary "build/packed-demo.bin"
+packed_demo_end:
     }
-scroller_y_offset_tab_2:
-    .for (var i = 0; i < 256; i++) {
-        .byte round((sin(toRadians(i / 256 * 360)) * 0.5 + 0.5) * 128)
+
+    .const target_size = $4000
+    .const max_size = $4000
+
+    .var total_size = * - start_addr + 2 // + 2 to include the program load address
+    .if(total_size > max_size) {
+        .error "Total size (" + total_size + " bytes) is more than the max size (" + max_size + " bytes)!"
     }
-
-    .pc = background_bitmap_pos "background bitmap"
-background_bitmap:
-    .import binary "build/background_bitmap.bin"
-
-    .pc = scroller_font_pos "scroller font"
-scroller_font:
-    .import binary "build/font.bin"
-
-    .pc = sprite_pos "sprites"
-sprites:
-    .import binary "build/sprites_blob.bin"
+    .print "Total size: " + total_size + " bytes"
+    .if(total_size > target_size) {
+        .print "WARNING: Total size greater than target size (" + target_size + " bytes) by " + (total_size - target_size) + " bytes!"
+    }
